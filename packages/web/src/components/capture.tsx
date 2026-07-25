@@ -77,14 +77,18 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       return
     }
 
-    // **読み取りは run の外で試す。** ここで失敗したらファイル選択に落とすので（§1.3）、
-    // busy にしたままだとフォールバック先のボタンごと押せなくなる。
+    // **読み取りは run の外で試す。** 失敗時に busy のままだと、案内先のボタンごと押せなくなる。
     let items: ClipboardItems
     try {
       items = await navigator.clipboard.read()
     } catch {
-      // 権限拒否・読み取り不可。ファイル選択にフォールバックする。
-      fileInput.current?.click()
+      // 権限拒否・読み取り不可。
+      //
+      // ⚠ **ここで file input を click() しても開かない。** 権限 UI を経た後の catch では
+      // クリック由来の transient user activation が切れており、iOS Safari はファイル選択を
+      // 無視する。自動で開こうとすると「押しても何も起きない」状態になるので、
+      // **利用者の次のタップに委ねる**（§1.3）。
+      setError('クリップボードを読めませんでした。「画像を選ぶ」からお試しください')
       return
     }
 
