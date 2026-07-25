@@ -13,14 +13,36 @@
 
 ## ステータス
 
-**PRD 策定中。** 実装はまだ無い。技術スタック・データモデル・認証方式・保存先はいずれも未確定で、
-[`prd/`](./prd/) の確定をもって正典とする。**このファイルに実装の記述を先回りして書かないこと。**
+**PRD 確定・実装未着手。** コードはまだ一行も無い。[`prd/`](./prd/) の記述は**全て計画**であり、
+実装が進んだ章から「実装済み」を書き分ける。
+
+## 技術スタック / 構成
+
+フルスタック TypeScript の **pnpm monorepo**。詳細は [prd/01](./prd/01-architecture.md)。
+
+- **DB**: MySQL 8.4 / **API**: Hono(RPC) / **ORM**: Drizzle ORM
+- **Front**: React 19 + Vite + TanStack Router + **TailwindCSS v4 + daisyUI**
+  - デザインの意思決定コストを掛けないため **daisyUI のコンポーネントに寄せる**。独自のデザイントークンを持ち込まない。
+  - **メモ化は React Compiler に委ねる**。`useMemo` / `useCallback` / `React.memo` は原則書かない。
+- **画像の実体**: SeaweedFS（S3 互換）。メタデータは MySQL（[prd/02](./prd/02-data-model.md)）。
+
+| パッケージ | 役割 |
+|---|---|
+| `packages/web` | UI（React + Vite + TanStack Router + Tailwind v4 + daisyUI） |
+| `packages/server` | Hono(RPC) API・DB スキーマ・BlobStore・認証 |
+
+> `shared` も `database` も作らない（[prd/01](./prd/01-architecture.md) §2）。
 
 ## ドキュメント（PRD）
 
 | 文書 | 内容 |
 |---|---|
-| [prd/README.md](./prd/README.md) | 目的 / スコープ / アーキ概観 / 索引 / 公開リポ方針 |
+| [prd/README.md](./prd/README.md) | 目的 / スコープ / アーキ概観 / 索引 / 秘匿方針 |
+| [prd/01-architecture.md](./prd/01-architecture.md) | 技術スタック / monorepo / 開発環境 / リモート dev / デプロイ姿勢 |
+| [prd/02-data-model.md](./prd/02-data-model.md) | DB スキーマ（clips）/ BlobStore / 画像の配信 / 上限 |
+| [prd/03-ux.md](./prd/03-ux.md) | 投入口 / 一覧とプレビュー / 取り出し / 削除 / 端末ごとの経路 |
+| [prd/04-auth-and-privacy.md](./prd/04-auth-and-privacy.md) | 認証 / ルート保護 / 公開配置の前提 |
+| [prd/05-roadmap.md](./prd/05-roadmap.md) | フェーズ分け / 未実装・やらないこと / 確定事項 |
 
 > 仕様策定の経緯（grill ログ）: [`prd/_grilling/decisions.md`](./prd/_grilling/decisions.md)
 
