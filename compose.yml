@@ -1,0 +1,111 @@
+# 開発環境。`pnpm dev` = `docker compose up --build --watch`。
+# ソースの同期は bind mount ではなく compose watch の sync で行う。
+#
+# ローカル dev とリモート dev 公開（前段プロキシ越しに手元ブラウザから使う）で compose を分けない。
+# 単一の compose.yml を環境変数でパラメータ化し、remote 差分は `.env.remote` に集約する
+# （`.env.remote.example` 参照。`pnpm dev:remote` = `docker compose --env-file .env.remote ...`）。prd/01 §4。
+#
+# ブラウザは常に**同一オリジンの /api** を叩き、web(Vite) の proxy が server へパスを保持したまま転送する。
+# ホストにポートを出すのは web だけ（db / seaweedfs / server は compose 網内のみ）。
+# 他プロジェクトとのポート衝突を避け、remote 公開時の外向きの口を1つに保つため。prd/01 §3。
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      TZ: "Asia/Tokyo"
+    env_file:
+      - .env.database
+    volumes:
+      - db-data:/var/lib/mysql
+    # ホストへのポート公開はしない（server からは docker network 越しに触れる）。
+    cap_add:
+      - SYS_NICE
+    healthcheck:
+      # 資格情報は必ず引用する。引用しないと、空白や `*` を含むパスワードで単語分割・
+      # パス名展開が起きて mysql に別の引数が渡り、DB 自体は正常でも永続的に unhealthy になる
+      # （server が service_healthy を待つため、`pnpm dev` 全体が始まらない）。
+      test:
+        - CMD-SHELL
+        - 'mysql --user="$$MYSQL_USER" --password="$$MYSQL_PASSWORD" "$$MYSQL_DATABASE" -e "select 1;"'
+      interval: 5s
+      timeout: 20s
+      retries: 3
+      start_period: 5s
+
+  # 画像の実体を置く S3 互換ストレージ（prd/02 §3）。
+  # server からは http://seaweedfs:8333 で到達する（ホストへのポート公開はしない）。
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.37
+    command: server -dir=/data -s3 -s3.port=8333
+    volumes:
+      - seaweed-data:/data
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /workspace
+    env_file:
+      - .env.database
+      - .env.server
+    environment:
+      # NODE_ENV 等は .env.server（env_file）から注入する。compose の environment は env_file より
+      # 優先されるため、ここに書くと .env.server で上書きできなくなる。
+      TZ: "Asia/Tokyo"
+      # remote 公開時のみ .env.remote から入る公開オリジン（例 https://<host>）。
+      # 空＝ローカル dev。
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-}"
+      # remote では前段プロキシが TLS を終端するため secure cookie を有効にする。prd/04 §2。
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+    command: pnpm --filter server dev
+    depends_on:
+      db:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_started
+    # ホストへのポート公開はしない。ブラウザは web(Vite) の /api proxy 経由で届く。
+    # ホストから直接叩きたいときは compose.override.yml で ports を足す。
+    expose:
+      - "4000"
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./packages/server
+          target: /workspace/packages/server
+          ignore: [node_modules/, dist/, "*.tsbuildinfo", "*.log"]
+        - action: rebuild
+          path: pnpm-lock.yaml
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /workspace
+    env_file:
+      - .env.web
+    environment:
+      TZ: "Asia/Tokyo"
+      # 同一オリジン配信: ブラウザは /api を叩き、Vite が compose 内の server へ
+      # パスを保持したまま転送する（/api を剥がさない）。
+      DEV_API_TARGET: "http://server:4000"
+      # remote 公開時のみ設定（vite.config.ts が allowedHosts / HMR wss:443 を条件付与）。
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-}"
+    command: pnpm --filter web dev --host
+    depends_on:
+      - server
+    # ローカルは 5173 を公開。remote は .env.remote の WEB_BIND で、前段プロキシ向けに
+    # loopback の1ポートだけ公開する（唯一の外向きの口）。
+    ports:
+      - "${WEB_BIND:-5173}:5173"
+    develop:
+      watch:
+        - action: sync
+          path: ./packages/web
+          target: /workspace/packages/web
+          ignore: [node_modules/, dist/, "*.tsbuildinfo", "*.log"]
+        - action: rebuild
+          path: pnpm-lock.yaml
+
+volumes:
+  db-data:
+  seaweed-data:

@@ -1,0 +1,23 @@
+# 開発用の共通イメージ（server / web で共用）。本番イメージは別途用意する。
+FROM node:22-slim
+
+# pnpm（corepack 経由。バージョンは package.json の packageManager に従う）
+RUN corepack enable
+
+WORKDIR /workspace
+
+# 依存解決に必要なマニフェスト類を先にコピー（レイヤキャッシュを効かせる）
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY packages/server/package.json packages/server/package.json
+COPY packages/web/package.json    packages/web/package.json
+
+# フォールバックを置かない。`|| pnpm install` があると、manifest と lockfile が不整合でも
+# イメージ作成が成功してしまう。しかもその install が直したコンテナ内 lockfile は直後の
+# `COPY . .` でリポジトリ側の古い内容に戻るため、最終イメージは記録と違う依存を持つ。
+# manifest を変えたらリポジトリの lockfile を更新すること。
+RUN pnpm install --frozen-lockfile
+
+# ソース本体は docker compose watch の sync で同期される（bind mount は使わない）
+COPY . .
+
+EXPOSE 4000 5173

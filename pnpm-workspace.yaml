@@ -1,0 +1,55 @@
+packages:
+  - "packages/*"
+
+# 共通依存はここでバージョンを一元管理し、各 package.json では "catalog:" で参照する。
+catalog:
+  # --- 言語 / 型 ---
+  typescript: ^5.9.3
+  "@types/node": ^24.12.4
+  tsx: ^4.22.3
+
+  # --- 検証 ---
+  zod: ^4.4.2
+
+  # --- API (server) ---
+  hono: ^4.12.15
+  "@hono/node-server": ^2.0.3
+  "@hono/zod-validator": ^0.8.0
+  # エントリ ID（辞書順が生成時刻順。monotonic 生成器を使う。prd/02 §2）
+  ulid: ^3.0.0
+  # BlobStore の S3 互換アダプタ（接続先は SeaweedFS。prd/02 §3）
+  "@aws-sdk/client-s3": ^3.1078.0
+
+  # --- DB (server 内に置く。prd/01 §2) ---
+  # ※ Drizzle は最新 RC を積極採用する方針。exact pin で minimumReleaseAge を実質回避する。
+  drizzle-orm: 1.0.0-rc.3
+  drizzle-kit: 1.0.0-rc.3
+  mysql2: ^3.22.3
+
+  # --- Front (web) ---
+  react: ^19.2.5
+  react-dom: ^19.2.5
+  "@types/react": ^19.2.0
+  "@types/react-dom": ^19.2.0
+  "@tanstack/react-router": ^1.168.24
+  vite: ^8.0.10
+  "@vitejs/plugin-react": ^5.0.0
+  # メモ化はコンパイラに任せる（手書きの useMemo/useCallback を置かない。prd/01 §1）。
+  babel-plugin-react-compiler: ^1.0.0
+  tailwindcss: ^4.1.0
+  "@tailwindcss/vite": ^4.1.0
+  # デザインの意思決定コストを掛けないためのコンポーネント集（prd/01 §1）。
+  daisyui: ^5.0.0
+
+  # --- テスト ---
+  vitest: ^3.0.0
+
+# サプライチェーン対策: 公開から 3 日(4320 分)未満の新バージョンは採用しない。
+# 公開直後に差し込まれる悪意あるリリースを踏みにくくする。
+# 最新を即追従したい依存（Drizzle RC 等）は catalog で exact pin して例外化する。
+minimumReleaseAge: 4320
+
+# postinstall ビルドを許可する依存（明示したものだけ走らせる）
+onlyBuiltDependencies:
+  - "@tailwindcss/oxide"
+  - esbuild

@@ -1,6 +1,8 @@
 # 01. アーキテクチャ
 
-> 本章の内容は**全て計画**（実装は未着手）。
+> **実装済み**: monorepo 構成 / compose（db・seaweedfs・server・web）/ 開発コマンド /
+> リモート dev の切替（`.env.remote`）/ 同一オリジン配信（Phase 1-1）。
+> **計画**: `pnpm db:push`（Drizzle 導入後）/ Hono RPC による型共有（API 実装後）。
 
 ## 1. 技術スタック
 
@@ -9,6 +11,7 @@
 
 | 層 | 採用 |
 |---|---|
+| 実行環境 | Node.js **22.12 以上**（Vite 8 の要件。`engines.node` で宣言する） |
 | 言語 | TypeScript（フルスタック） |
 | パッケージ管理 | pnpm workspace（monorepo） |
 | DB | MySQL 8.4 |
@@ -17,6 +20,8 @@
 | Front | React 19 + Vite + TanStack Router |
 | スタイル | **TailwindCSS v4 + daisyUI** |
 | 画像の実体 | SeaweedFS（S3 互換） |
+| lint / format | Biome（`pnpm check` / `pnpm format`） |
+| テスト | Vitest |
 
 **daisyUI を使う理由**: 個人用ツールにデザインの意思決定コストを掛けないため。素の Tailwind だと
 ボタン・カード・モーダルの見た目を毎回自分で決めることになる。daisyUI のコンポーネントクラスに
@@ -51,12 +56,28 @@ remote 公開時の外向きの口を1つに保つため）。
 | `server` | Hono API | しない（web の `/api` proxy 経由で届く） |
 | `web` | Vite dev サーバ | **する**（唯一の外向きの口） |
 
+**初回だけ `.env.*` を用意する。** compose が `env_file` として要求するため、これが無いと起動しない。
+
+```bash
+pnpm install
+pnpm init:env     # .env.*.example から .env.* を作る（既存ファイルは上書きしない）
+```
+
+`init:env` が作るのは **example のダミー値のまま**である。認証を実装した後は
+`AUTH_PASSWORD` と `SESSION_SECRET` を自分の値に置き換えること（[04](./04-auth-and-privacy.md) §2）。
+
 ```bash
 pnpm dev          # docker compose up --build --watch で全サービス起動
+pnpm down         # 停止（volume は残す）
 pnpm typecheck    # 全パッケージ tsc --noEmit
 pnpm build        # 全パッケージのビルド
-pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB 向け）
+pnpm test         # 全パッケージ vitest run
+pnpm check        # biome（lint + format 検査）
+pnpm format       # biome で整形
+pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB 向け・計画中）
 ```
+
+> `pnpm db:push` は Drizzle 導入後に用意する（[05](./05-roadmap.md) Phase 1-2）。
 
 環境変数は `.env.database` / `.env.server` / `.env.web` に分け、**`.env.*.example` だけを追跡する**。
 
@@ -72,7 +93,7 @@ pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB �
 |---|---|---|---|
 | web の公開バインド | 全 IF | ループバックのみ | compose `${WEB_BIND}` |
 | secure cookie | `false` | `true` | compose `${COOKIE_SECURE}` → server |
-| Vite の許可ホスト / HMR | なし | `allowedHosts` + `hmr wss:443` | `${DEV_ALLOWED_HOST}` を `vite.config.ts` が判定 |
+| Vite の許可ホスト / HMR | なし | `allowedHosts` + `hmr wss:443` | `${PUBLIC_ORIGIN}` から host を導出して `vite.config.ts` が判定 |
 
 **具体的なバインドアドレス・ポート・ドメイン・前段の設定は公開しない**（`.env.remote` と
 `.claude-personal/`）。

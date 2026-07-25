@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+/* デザインの意思決定コストを掛けないため、daisyUI のコンポーネントに寄せる（prd/01 §1）。
+   独自のデザイントークンは持ち込まない。 */
+@plugin "daisyui";
