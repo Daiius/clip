@@ -35,7 +35,13 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
     setBusy(true)
     setError(null)
     try {
-      await (payload.kind === 'text' ? createTextClip(payload.text) : createImageClip(payload.file))
+      // 三項演算子にしない。**React Compiler は try 内の value block を扱えない**
+      // （条件式・論理演算・optional chaining。prd/01 §1）。
+      if (payload.kind === 'text') {
+        await createTextClip(payload.text)
+      } else {
+        await createImageClip(payload.file)
+      }
       setPending(null)
       onCaptured()
     } catch (cause) {
