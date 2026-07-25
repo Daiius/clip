@@ -12,7 +12,14 @@ import {
   verifyCredentials,
 } from './auth.ts'
 import { type BlobStore, blobKeyFor, createS3BlobStore } from './blob-store.ts'
-import { type ImageMimeType, MAX_IMAGE_BYTES, toClip } from './clip.ts'
+import {
+  type ImageMimeType,
+  MAX_FILE_NAME_LENGTH,
+  MAX_IMAGE_BYTES,
+  MAX_TEXT_BYTES,
+  toClip,
+} from './clip.ts'
+import { attachmentDisposition } from './content-disposition.ts'
 import { db } from './db/index.ts'
 import { clips } from './db/schema.ts'
 import { newClipId } from './id.ts'
@@ -120,6 +127,10 @@ export const routes = new Hono()
           return c.json({ error: 'unsupported image format' } as const, 415)
         }
 
+        // ファイル名は DB 列（varchar(255)）に収まるよう丸める。長いという理由で投入を拒まない
+        // （ダウンロード時の既定名でしかない。prd/02 §5）。**S3 に put する前に済ませる**。
+        const fileName = file.name ? file.name.slice(0, MAX_FILE_NAME_LENGTH) : null
+
         const id = newClipId()
         const key = blobKeyFor(id)
 
@@ -134,7 +145,7 @@ export const routes = new Hono()
             mimeType,
             byteSize: bytes.byteLength,
             // ペースト経由ではファイル名が取れない（prd/02 §2）。
-            fileName: file.name || null,
+            fileName,
             createdAt: new Date(),
           })
         } catch (error) {
@@ -151,6 +162,12 @@ export const routes = new Hono()
       }
 
       if (typeof text === 'string' && text.length > 0) {
+        // `mediumtext` の上限を超えた入力をそのまま insert すると DB エラー（500）になる。
+        // 利用者の入力に起因する失敗は明示的な 4xx で返す（prd/02 §5 / prd/03 §1.4）。
+        if (Buffer.byteLength(text, 'utf8') > MAX_TEXT_BYTES) {
+          return c.json({ error: 'text too large' } as const, 413)
+        }
+
         const id = newClipId()
         await db.insert(clips).values({ id, kind: 'text', text, createdAt: new Date() })
         return c.json({ id } as const, 201)
@@ -190,8 +207,9 @@ async function serveBlob(id: string, asAttachment: boolean): Promise<Response> {
 
   if (asAttachment) {
     const name = clip.fileName ?? `clip-${clip.id}.${EXTENSIONS[clip.mimeType]}`
-    // encodeURIComponent で包むので、改行や `"` を含む名前でもヘッダを壊せない。
-    headers.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`)
+    // RFC 5987 の拡張値として符号化する。改行や `"` はもちろん、`'` `(` `)` `*` も
+    // percent-encode されるのでヘッダを壊せない（content-disposition.ts）。
+    headers.set('Content-Disposition', attachmentDisposition(name))
   }
 
   return new Response(body, { headers })

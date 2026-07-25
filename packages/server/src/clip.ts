@@ -18,6 +18,23 @@ export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number]
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 /**
+ * テキストの上限（prd/02 §5）。**`mediumtext` の上限そのもの**（16,777,215 バイト・UTF-8 換算）。
+ *
+ * 実用上ここに当たることは想定しないが、**上限を超えた入力を DB に投げると 500 になる**。
+ * 利用者の入力に起因する失敗は、DB エラーではなく明示的な 4xx で返す。
+ */
+export const MAX_TEXT_BYTES = 16_777_215
+
+/**
+ * ファイル名の上限（`varchar(255)`）。**超えた分は切り詰める**。
+ *
+ * ファイル名はダウンロード時の既定名でしかなく、**長いという理由で投入を拒む価値がない**
+ * （ペースト経由ではそもそも無い。prd/02 §2）。ただし DB 列に収まらないものをそのまま
+ * insert すると 500 になるので、保存前に丸める。
+ */
+export const MAX_FILE_NAME_LENGTH = 255
+
+/**
  * エントリのドメイン表現。**テキストか画像のどちらか一方**で、同居しない（prd/02 §1）。
  *
  * DB のテーブルは NULL 可能列を並べた1枚だが、**アプリ層ではこの discriminated union を正とする**。
