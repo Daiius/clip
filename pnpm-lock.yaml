@@ -9,6 +9,9 @@ catalogs:
     '@hono/node-server':
       specifier: ^2.0.3
       version: 2.0.11
+    '@hono/zod-validator':
+      specifier: ^0.8.0
+      version: 0.8.0
     '@tailwindcss/vite':
       specifier: ^4.1.0
       version: 4.3.3
@@ -89,6 +92,9 @@ importers:
       '@hono/node-server':
         specifier: 'catalog:'
         version: 2.0.11(hono@4.12.31)
+      '@hono/zod-validator':
+        specifier: 'catalog:'
+        version: 0.8.0(hono@4.12.31)(zod@4.4.3)
       drizzle-orm:
         specifier: 'catalog:'
         version: 1.0.0-rc.3(mysql2@3.23.1(@types/node@24.13.3))(zod@4.4.3)
@@ -126,6 +132,9 @@ importers:
       '@tanstack/react-router':
         specifier: 'catalog:'
         version: 1.170.18(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      hono:
+        specifier: 'catalog:'
+        version: 4.12.31
       react:
         specifier: 'catalog:'
         version: 19.2.8
@@ -151,6 +160,9 @@ importers:
       daisyui:
         specifier: 'catalog:'
         version: 5.7.0
+      server:
+        specifier: workspace:*
+        version: link:../server
       tailwindcss:
         specifier: 'catalog:'
         version: 4.3.3
@@ -635,6 +647,12 @@ packages:
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
+
+  '@hono/zod-validator@0.8.0':
+    resolution: {integrity: sha512-5uS4S1/LKtZQYvD4BtpPUFkOv8d1wNxHHrChm26buMiEYc1FrHWvDUaKVBwkiVtvSExHSpLGDvcnpI2Copyj9w==}
+    peerDependencies:
+      hono: '>=4.10.0'
+      zod: ^3.25.0 || ^4.0.0
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -2160,6 +2178,11 @@ snapshots:
   '@hono/node-server@2.0.11(hono@4.12.31)':
     dependencies:
       hono: 4.12.31
+
+  '@hono/zod-validator@0.8.0(hono@4.12.31)(zod@4.4.3)':
+    dependencies:
+      hono: 4.12.31
+      zod: 4.4.3
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

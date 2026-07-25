@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 1 | monorepo 雛形・compose（db / seaweedfs / server / web）・`.env.*.example` | **実装済み** | [01](./01-architecture.md) |
 | 2 | `clips` スキーマと Drizzle 設定 | **実装済み** | [02](./02-data-model.md) |
-| 3 | cookie セッション認証（`/login` とルートガード） | 計画 | [04](./04-auth-and-privacy.md) §2 |
+| 3 | cookie セッション認証（`/login` とルートガード） | **実装済み** | [04](./04-auth-and-privacy.md) §2 |
 | 4 | BlobStore（S3 互換）と画像の保存・配信 + **形式 allowlist とシグネチャ検証** | 計画 | [02](./02-data-model.md) §3-4 |
 | 5 | 投入（ページへのペースト / 貼り付けボタン / D&D / ファイル選択） | 計画 | [03](./03-ux.md) §1 |
 | 6 | 一覧・プレビュー・クリックでコピー・ダウンロード・削除 | 計画 | [03](./03-ux.md) §2-4 |
