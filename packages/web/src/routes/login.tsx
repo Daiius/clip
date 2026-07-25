@@ -1,6 +1,7 @@
 import { getRouteApi } from '@tanstack/react-router'
 import { useState } from 'react'
 import { api } from '../api.ts'
+import { safeRedirect } from '../redirect.ts'
 
 const routeApi = getRouteApi('/login')
 
@@ -24,7 +25,8 @@ export function LoginPage() {
       return
     }
     // cookie を確実に載せた状態で読み直したいので、遷移ではなくページごと差し替える。
-    window.location.href = redirect ?? '/'
+    // 戻り先は **同一オリジンの安全なパスに限定する**（`?redirect=` は攻撃者が細工できる）。
+    window.location.href = safeRedirect(redirect, window.location.origin)
   }
 
   return (

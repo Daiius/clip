@@ -1,8 +1,8 @@
 # 01. アーキテクチャ
 
 > **実装済み**: monorepo 構成 / compose（db・seaweedfs・server・web）/ 開発コマンド /
-> リモート dev の切替（`.env.remote`）/ 同一オリジン配信（Phase 1-1）。
-> **計画**: Hono RPC による型共有（API 実装後）。
+> リモート dev の切替（`.env.remote`）/ 同一オリジン配信（Phase 1-1）/
+> **Hono RPC による server・web 間の API 型共有**（Phase 1-3）。
 
 ## 1. 技術スタック
 
