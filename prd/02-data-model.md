@@ -17,7 +17,7 @@
 | `kind` | `enum('text','image')` | エントリの種別 |
 | `text` | `mediumtext` NULL | `kind='text'` のとき本文。`kind='image'` では NULL |
 | `blobKey` | `varchar(255)` NULL | `kind='image'` のとき S3 のオブジェクトキー。`kind='text'` では NULL |
-| `mimeType` | `varchar(255)` NULL | `kind='image'` のとき判定した MIME（`image/png` 等） |
+| `mimeType` | `varchar(255)` NULL | `kind='image'` のとき **サーバーがシグネチャから判定した** MIME（§4.1 の allowlist 内） |
 | `byteSize` | `int unsigned` NULL | `kind='image'` のとき実体のバイト数 |
 | `fileName` | `varchar(255)` NULL | 元のファイル名。**ペースト経由では取れないので NULL を許す** |
 | `createdAt` | `datetime` | 作成時刻 |
@@ -58,14 +58,42 @@ delete(key) -> void
 
   どちらも異常だが、**気づける異常の方を選ぶ**。
 
-## 4. 画像の配信
+## 4. 受け入れ形式の検証と画像の配信
+
+private データと**同一オリジン**から画像を配信するため、**何を受け入れるか**が安全性を決める。
+
+### 4.1 受け入れ形式（allowlist）
+
+**保存してよいのは PNG / JPEG / GIF / WebP のみ。**
+
+| MIME | 判定に使うシグネチャ（先頭バイト） |
+|---|---|
+| `image/png` | `89 50 4E 47 0D 0A 1A 0A` |
+| `image/jpeg` | `FF D8 FF` |
+| `image/gif` | `47 49 46 38` (`GIF8`) |
+| `image/webp` | `52 49 46 46` … `57 45 42 50`（`RIFF`…`WEBP`） |
+
+- **`image/svg+xml` は受け入れない。** SVG はスクリプトを含みうる**能動コンテンツ**であり、
+  同一オリジンで inline 配信すると、開いた時点でアプリのオリジンで実行される。認証済み API を
+  操作されたり、他の clip を読み出されたりする **stored XSS** になる。
+  **貼るのが常に自分とは限らない**（他人からもらった画像を中継する用途がある）ため、形式で弾く。
+- **クライアントが申告した MIME を信用しない。** サーバーが実体の先頭バイトから形式を判定し、
+  allowlist 外なら 415 を返して保存しない。`clips.mimeType` に入れるのは**サーバーが判定した値**。
+- 将来 SVG を扱いたくなった場合は、①ラスタライズして保存する か ②cookie を共有しない別オリジンから
+  配信する のどちらかを設計してから足す。**allowlist をただ広げるのは禁じ手**とする。
+
+### 4.2 配信
 
 `GET /api/clips/:id/blob` で server が S3 から取得してストリームで返す。
 
 - **署名付き URL へのリダイレクトはしない。** 認証をアプリの cookie セッションに一本化しており
   （[04](./04-auth-and-privacy.md)）、S3 の口を外に出すとその原則が崩れる。SeaweedFS もホストに
   公開していない（[01](./01-architecture.md) §3）。
-- レスポンスには `Content-Type`（`mimeType`）と `Content-Length`（`byteSize`）を付ける。
+- レスポンスヘッダ:
+  - `Content-Type`: **保存時にサーバーが判定した `mimeType`**（クライアント申告ではない）
+  - `Content-Length`: `byteSize`
+  - **`X-Content-Type-Options: nosniff`** — ブラウザによる MIME 推測を止める。allowlist を通っても、
+    推測で別の形式として解釈される余地を残さない
 - ダウンロード用途では `Content-Disposition: attachment` を付けた別経路を用意する（[03](./03-ux.md) §3）。
 
 ## 5. 上限
