@@ -11,7 +11,11 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
 COPY packages/server/package.json packages/server/package.json
 COPY packages/web/package.json    packages/web/package.json
 
-RUN pnpm install --frozen-lockfile || pnpm install
+# フォールバックを置かない。`|| pnpm install` があると、manifest と lockfile が不整合でも
+# イメージ作成が成功してしまう。しかもその install が直したコンテナ内 lockfile は直後の
+# `COPY . .` でリポジトリ側の古い内容に戻るため、最終イメージは記録と違う依存を持つ。
+# manifest を変えたらリポジトリの lockfile を更新すること。
+RUN pnpm install --frozen-lockfile
 
 # ソース本体は docker compose watch の sync で同期される（bind mount は使わない）
 COPY . .

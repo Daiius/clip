@@ -21,7 +21,12 @@ services:
     cap_add:
       - SYS_NICE
     healthcheck:
-      test: mysql -u $$MYSQL_USER -p$$MYSQL_PASSWORD $$MYSQL_DATABASE -e "select 1;"
+      # 資格情報は必ず引用する。引用しないと、空白や `*` を含むパスワードで単語分割・
+      # パス名展開が起きて mysql に別の引数が渡り、DB 自体は正常でも永続的に unhealthy になる
+      # （server が service_healthy を待つため、`pnpm dev` 全体が始まらない）。
+      test:
+        - CMD-SHELL
+        - 'mysql --user="$$MYSQL_USER" --password="$$MYSQL_PASSWORD" "$$MYSQL_DATABASE" -e "select 1;"'
       interval: 5s
       timeout: 20s
       retries: 3
