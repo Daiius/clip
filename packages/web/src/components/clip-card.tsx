@@ -40,6 +40,10 @@ export function ClipCard({ clip, onDeleted }: { clip: ListedClip; onDeleted: () 
   const [expanded, setExpanded] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
+  /** 画像の取得が失敗した（実体が消えている）。削除の途中失敗で起きる（prd/02 §3.2）。 */
+  const [imageMissing, setImageMissing] = useState(false)
+
+  const broken = clip.kind === 'broken' || imageMissing
 
   const download = () => {
     window.location.href = `/api/clips/${clip.id}/download`
@@ -86,7 +90,7 @@ export function ClipCard({ clip, onDeleted }: { clip: ListedClip; onDeleted: () 
           <time className="text-base-content/50 text-xs">{formatTime(clip.createdAt)}</time>
           <div className="flex items-center gap-1">
             {copied && <span className="badge badge-success badge-sm">コピーしました</span>}
-            {clip.kind === 'image' && (
+            {clip.kind === 'image' && !broken && (
               <button type="button" className="btn btn-ghost btn-xs" onClick={download}>
                 ダウンロード
               </button>
@@ -102,9 +106,14 @@ export function ClipCard({ clip, onDeleted }: { clip: ListedClip; onDeleted: () 
           </div>
         </div>
 
-        {clip.kind === 'broken' ? (
+        {broken ? (
+          // 削除は S3 → DB の順なので、途中で失敗すると**実体を失った行**が残る（prd/02 §3.2）。
+          // 行の構造は正常なので一覧 API では検出できない。**取得の失敗をここで拾って明示する**
+          // （黙って壊れた画像を出すと、気づける異常を選んだ意味が無くなる）。
           <p className="text-error text-sm">
-            この項目は壊れています（実体が見つかりません）。削除してください。
+            {clip.kind === 'broken'
+              ? 'この項目は壊れています（データが不整合です）。削除してください。'
+              : '画像の実体が見つかりません（削除の途中で失敗した可能性があります）。削除してください。'}
           </p>
         ) : (
           <button
@@ -123,6 +132,7 @@ export function ClipCard({ clip, onDeleted }: { clip: ListedClip; onDeleted: () 
               <img
                 src={`/api/clips/${clip.id}/blob`}
                 alt=""
+                onError={() => setImageMissing(true)}
                 className="max-h-96 max-w-full rounded object-contain"
               />
             )}

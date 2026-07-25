@@ -101,6 +101,7 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
     event.preventDefault()
     setDragging(false)
 
+    // 判別はペーストと同じ規則。**画像が含まれていれば画像、無ければテキスト**（§1.1）。
     const image = Array.from(event.dataTransfer.files).find((file) =>
       IMAGE_TYPES.includes(file.type),
     )
@@ -108,7 +109,15 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       void run(() => createImageClip(image))
       return
     }
-    // 画像以外のファイルは受け付けない（任意ファイルは対象外。§1.4）。
+
+    // 選択テキストのドラッグもここで拾う（拾わないと、落としても何も増えない）。
+    const text = event.dataTransfer.getData('text/plain')
+    if (text) {
+      void run(() => createTextClip(text))
+      return
+    }
+
+    // 画像でもテキストでもないファイルは受け付けない（任意ファイルは対象外。§1.4）。
     if (event.dataTransfer.files.length > 0) {
       setError('画像とテキストのみ扱えます')
     }

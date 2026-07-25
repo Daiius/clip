@@ -30,7 +30,13 @@ async function postClip(form: FormData): Promise<void> {
     throw new CaptureError('PNG / JPEG / GIF / WebP のみ扱えます')
   }
   if (response.status === 413) {
-    throw new CaptureError('大きすぎます（画像は 20MB まで）')
+    // 画像とテキストで理由が違う（prd/03 §1.4）。**どちらも「画像は 20MB まで」と出すと嘘になる。**
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new CaptureError(
+      body?.error === 'text too large'
+        ? 'テキストが大きすぎます'
+        : '画像が大きすぎます（20MB まで）',
+    )
   }
   if (response.status === 401) {
     throw new CaptureError('ログインの有効期限が切れています。再読み込みしてください')
