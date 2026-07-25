@@ -17,6 +17,8 @@
 | Front | React 19 + Vite + TanStack Router |
 | スタイル | **TailwindCSS v4 + daisyUI** |
 | 画像の実体 | SeaweedFS（S3 互換） |
+| lint / format | Biome（`pnpm check` / `pnpm format`） |
+| テスト | Vitest |
 
 **daisyUI を使う理由**: 個人用ツールにデザインの意思決定コストを掛けないため。素の Tailwind だと
 ボタン・カード・モーダルの見た目を毎回自分で決めることになる。daisyUI のコンポーネントクラスに
@@ -53,10 +55,16 @@ remote 公開時の外向きの口を1つに保つため）。
 
 ```bash
 pnpm dev          # docker compose up --build --watch で全サービス起動
+pnpm down         # 停止（volume は残す）
 pnpm typecheck    # 全パッケージ tsc --noEmit
 pnpm build        # 全パッケージのビルド
-pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB 向け）
+pnpm test         # 全パッケージ vitest run
+pnpm check        # biome（lint + format 検査）
+pnpm format       # biome で整形
+pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB 向け・計画中）
 ```
+
+> `pnpm db:push` は Drizzle 導入後に用意する（[05](./05-roadmap.md) Phase 1-2）。
 
 環境変数は `.env.database` / `.env.server` / `.env.web` に分け、**`.env.*.example` だけを追跡する**。
 

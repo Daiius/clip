@@ -1,0 +1,27 @@
+{
+  "name": "clip",
+  "version": "0.0.0",
+  "private": true,
+  "description": "端末間でテキストや画像を貼って共有・プレビューする個人用ツール",
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "docker compose up --build --watch",
+    "dev:remote": "docker compose --env-file .env.remote up --build --watch",
+    "dev:remote:logs": "docker compose --env-file .env.remote logs -f",
+    "dev:remote:down": "docker compose --env-file .env.remote down",
+    "down": "docker compose down",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "check": "biome check .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.0",
+    "typescript": "catalog:"
+  }
+}
