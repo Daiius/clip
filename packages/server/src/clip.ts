@@ -18,6 +18,38 @@ export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number]
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 /**
+ * テキストの上限（prd/02 §5）。**`mediumtext` の上限そのもの**（16,777,215 バイト・UTF-8 換算）。
+ *
+ * 実用上ここに当たることは想定しないが、**上限を超えた入力を DB に投げると 500 になる**。
+ * 利用者の入力に起因する失敗は、DB エラーではなく明示的な 4xx で返す。
+ */
+export const MAX_TEXT_BYTES = 16_777_215
+
+/**
+ * ファイル名の上限（`varchar(255)`）。**超えた分は切り詰める**。
+ *
+ * ファイル名はダウンロード時の既定名でしかなく、**長いという理由で投入を拒む価値がない**
+ * （ペースト経由ではそもそも無い。prd/02 §2）。ただし DB 列に収まらないものをそのまま
+ * insert すると 500 になるので、保存前に丸める。
+ */
+export const MAX_FILE_NAME_LENGTH = 255
+
+/**
+ * ファイル名を DB 列（`varchar(255)`）に収まる長さへ丸める。
+ *
+ * **`String.prototype.slice` を使わない。** slice は UTF-16 コード単位で数えるため、
+ * 絵文字など BMP 外の文字を含む名前では **255 文字まで入れられず、境界でサロゲートペアを
+ * 分断して末尾が化ける**。MySQL の `varchar(255)` は**コードポイント単位**で数えるので、
+ * `Array.from`（＝コードポイント単位）で切るとちょうど列の制約と一致する。
+ *
+ * 書記素クラスタ単位（`Intl.Segmenter`）にはしない。1書記素が複数コードポイントになりうるので、
+ * **列の制約を超えてしまう**（丸める目的を果たせない）。
+ */
+export function truncateFileName(name: string): string {
+  return Array.from(name).slice(0, MAX_FILE_NAME_LENGTH).join('')
+}
+
+/**
  * エントリのドメイン表現。**テキストか画像のどちらか一方**で、同居しない（prd/02 §1）。
  *
  * DB のテーブルは NULL 可能列を並べた1枚だが、**アプリ層ではこの discriminated union を正とする**。
