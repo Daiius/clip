@@ -22,8 +22,8 @@ pnpm-debug.log*
 !.env.example
 !.env.*.example
 
-# ローカル専用のエージェント向けルール/情報（gitignore。存在すれば AGENTS.md から参照）
-.claude-personal/
+# ローカル専用のエージェント向けルール/情報は .claude-personal/.gitignore で自己完結除外する
+# （ディレクトリの存在と方針だけを公開文書に残すため、ここには書かない）
 
 # Playwright MCP のスクショ出力（グローバル gitignore 対象だが念のため）
 .playwright-mcp/
