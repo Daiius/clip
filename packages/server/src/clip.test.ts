@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_IMAGE_BYTES, clipSchema, toClip } from './clip.ts'
+import { clipSchema, MAX_IMAGE_BYTES, toClip } from './clip.ts'
 import type { ClipRow } from './db/schema.ts'
 
 const baseRow = {

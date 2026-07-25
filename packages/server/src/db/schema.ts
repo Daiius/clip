@@ -1,4 +1,12 @@
-import { char, datetime, int, mediumtext, mysqlEnum, mysqlTable, varchar } from 'drizzle-orm/mysql-core'
+import {
+  char,
+  datetime,
+  int,
+  mediumtext,
+  mysqlEnum,
+  mysqlTable,
+  varchar,
+} from 'drizzle-orm/mysql-core'
 
 /**
  * エントリの種別（prd/02 §2）。**1エントリはテキストか画像のどちらか一方**で、同居させない。

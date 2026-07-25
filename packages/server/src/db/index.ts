@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/mysql2'
-import { type Pool, createPool } from 'mysql2'
+import { createPool, type Pool } from 'mysql2'
 
 /**
  * DB 接続（prd/01 §3）。接続先は compose 網内の `db` で、ホストには公開していない。
