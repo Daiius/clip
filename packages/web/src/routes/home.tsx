@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api.ts'
 import { type ListedClip, listClips } from '../clips.ts'
 import { Capture } from '../components/capture.tsx'
@@ -15,14 +15,25 @@ export function HomePage() {
   const [failed, setFailed] = useState<string | null>(null)
   const [loggingOut, setLoggingOut] = useState(false)
 
+  /**
+   * 取得の世代。**`reload` が走ったら、進行中の「もっと見る」の結果を捨てる**ための番号。
+   *
+   * これが無いと、`loadMore` の最中に投入や削除で `reload` が走ったとき、
+   * **古いカーソルで取った続きが新しい先頭ページに継ぎ足されて**、一覧に欠落や重複が出る。
+   */
+  const generation = useRef(0)
+
   /** 先頭から読み直す。投入・削除のあとはこれで揃える。 */
   const reload = useCallback(async () => {
+    const current = ++generation.current
     setFailed(null)
     try {
       const page = await listClips()
+      if (current !== generation.current) return
       setClips(page.clips)
       setNextCursor(page.nextCursor)
     } catch {
+      if (current !== generation.current) return
       setFailed('一覧を取得できませんでした')
     }
     // `finally` を使わない。**React Compiler が finally 節を扱えず**、
@@ -37,13 +48,16 @@ export function HomePage() {
 
   const loadMore = async () => {
     if (!nextCursor) return
+    const current = generation.current
     setLoadingMore(true)
     try {
       const page = await listClips(nextCursor)
-      setClips((current) => [...current, ...page.clips])
+      // 待っている間に reload が走っていたら、この続きはもう繋がらない。捨てる。
+      if (current !== generation.current) return
+      setClips((clips) => [...clips, ...page.clips])
       setNextCursor(page.nextCursor)
     } catch {
-      setFailed('続きを取得できませんでした')
+      if (current === generation.current) setFailed('続きを取得できませんでした')
     }
     setLoadingMore(false)
   }

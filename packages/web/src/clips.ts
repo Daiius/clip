@@ -15,7 +15,7 @@ export class CaptureError extends Error {}
  * multipart を送るのでここだけ素の `fetch` を使う（RPC のフォーム型は File を含むと扱いづらい）。
  * 経路は3つあるが**すべてこの1本に集約する**ので、増えるのは呼び出し側だけ。
  */
-async function postClip(form: FormData): Promise<void> {
+async function postClip(form: FormData, kind: 'text' | 'image'): Promise<void> {
   let response: Response
   try {
     response = await fetch('/api/clips', { method: 'POST', body: form })
@@ -31,11 +31,13 @@ async function postClip(form: FormData): Promise<void> {
   }
   if (response.status === 413) {
     // 画像とテキストで理由が違う（prd/03 §1.4）。**どちらも「画像は 20MB まで」と出すと嘘になる。**
+    // multipart 全体の上限に先に掛かると理由が付かない 413 が返るので、そのときは送った種別で決める。
     const body = (await response.json().catch(() => null)) as { error?: string } | null
+    const tooLargeKind =
+      body?.error === 'text too large' ? 'text' : body?.error === 'image too large' ? 'image' : kind
+
     throw new CaptureError(
-      body?.error === 'text too large'
-        ? 'テキストが大きすぎます'
-        : '画像が大きすぎます（20MB まで）',
+      tooLargeKind === 'text' ? 'テキストが大きすぎます' : '画像が大きすぎます（20MB まで）',
     )
   }
   if (response.status === 401) {
@@ -47,13 +49,13 @@ async function postClip(form: FormData): Promise<void> {
 export async function createTextClip(text: string): Promise<void> {
   const form = new FormData()
   form.set('text', text)
-  await postClip(form)
+  await postClip(form, 'text')
 }
 
 export async function createImageClip(file: File): Promise<void> {
   const form = new FormData()
   form.set('file', file, file.name || 'pasted-image')
-  await postClip(form)
+  await postClip(form, 'image')
 }
 
 export async function listClips(cursor?: string): Promise<ClipListResponse> {
