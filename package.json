@@ -9,7 +9,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "init:env": "for f in database server web; do [ -f .env.$f ] || cp .env.$f.example .env.$f; done",
+    "init:env": "node scripts/init-env.mjs",
     "dev": "docker compose up --build --watch",
     "dev:remote": "docker compose --env-file .env.remote up --build --watch",
     "dev:remote:logs": "docker compose --env-file .env.remote logs -f",

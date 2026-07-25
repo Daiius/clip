@@ -93,7 +93,7 @@ pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB �
 |---|---|---|---|
 | web の公開バインド | 全 IF | ループバックのみ | compose `${WEB_BIND}` |
 | secure cookie | `false` | `true` | compose `${COOKIE_SECURE}` → server |
-| Vite の許可ホスト / HMR | なし | `allowedHosts` + `hmr wss:443` | `${DEV_ALLOWED_HOST}` を `vite.config.ts` が判定 |
+| Vite の許可ホスト / HMR | なし | `allowedHosts` + `hmr wss:443` | `${PUBLIC_ORIGIN}` から host を導出して `vite.config.ts` が判定 |
 
 **具体的なバインドアドレス・ポート・ドメイン・前段の設定は公開しない**（`.env.remote` と
 `.claude-personal/`）。
