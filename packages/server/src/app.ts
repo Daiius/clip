@@ -14,10 +14,10 @@ import {
 import { type BlobStore, blobKeyFor, createS3BlobStore } from './blob-store.ts'
 import {
   type ImageMimeType,
-  MAX_FILE_NAME_LENGTH,
   MAX_IMAGE_BYTES,
   MAX_TEXT_BYTES,
   toClip,
+  truncateFileName,
 } from './clip.ts'
 import { attachmentDisposition } from './content-disposition.ts'
 import { db } from './db/index.ts'
@@ -129,7 +129,7 @@ export const routes = new Hono()
 
         // ファイル名は DB 列（varchar(255)）に収まるよう丸める。長いという理由で投入を拒まない
         // （ダウンロード時の既定名でしかない。prd/02 §5）。**S3 に put する前に済ませる**。
-        const fileName = file.name ? file.name.slice(0, MAX_FILE_NAME_LENGTH) : null
+        const fileName = file.name ? truncateFileName(file.name) : null
 
         const id = newClipId()
         const key = blobKeyFor(id)

@@ -35,6 +35,21 @@ export const MAX_TEXT_BYTES = 16_777_215
 export const MAX_FILE_NAME_LENGTH = 255
 
 /**
+ * ファイル名を DB 列（`varchar(255)`）に収まる長さへ丸める。
+ *
+ * **`String.prototype.slice` を使わない。** slice は UTF-16 コード単位で数えるため、
+ * 絵文字など BMP 外の文字を含む名前では **255 文字まで入れられず、境界でサロゲートペアを
+ * 分断して末尾が化ける**。MySQL の `varchar(255)` は**コードポイント単位**で数えるので、
+ * `Array.from`（＝コードポイント単位）で切るとちょうど列の制約と一致する。
+ *
+ * 書記素クラスタ単位（`Intl.Segmenter`）にはしない。1書記素が複数コードポイントになりうるので、
+ * **列の制約を超えてしまう**（丸める目的を果たせない）。
+ */
+export function truncateFileName(name: string): string {
+  return Array.from(name).slice(0, MAX_FILE_NAME_LENGTH).join('')
+}
+
+/**
  * エントリのドメイン表現。**テキストか画像のどちらか一方**で、同居しない（prd/02 §1）。
  *
  * DB のテーブルは NULL 可能列を並べた1枚だが、**アプリ層ではこの discriminated union を正とする**。

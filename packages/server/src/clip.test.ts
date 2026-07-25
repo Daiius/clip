@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { clipSchema, MAX_IMAGE_BYTES, toClip } from './clip.ts'
+import {
+  clipSchema,
+  MAX_FILE_NAME_LENGTH,
+  MAX_IMAGE_BYTES,
+  toClip,
+  truncateFileName,
+} from './clip.ts'
 import type { ClipRow } from './db/schema.ts'
 
 const baseRow = {
@@ -107,5 +113,38 @@ describe('clipSchema', () => {
     expect(
       clipSchema.safeParse({ ...image, mimeType: 'image/png', byteSize: MAX_IMAGE_BYTES }).success,
     ).toBe(true)
+  })
+})
+
+describe('truncateFileName', () => {
+  it('上限以内はそのまま', () => {
+    expect(truncateFileName('dot.png')).toBe('dot.png')
+    expect(truncateFileName('a'.repeat(MAX_FILE_NAME_LENGTH))).toHaveLength(MAX_FILE_NAME_LENGTH)
+  })
+
+  it('上限を超えたら丸める', () => {
+    expect(truncateFileName('a'.repeat(300))).toHaveLength(MAX_FILE_NAME_LENGTH)
+  })
+
+  it('BMP 外の文字（絵文字）をコードポイント単位で数える', () => {
+    // slice だと UTF-16 コード単位で数えるため、255 コードポイント入れられず、
+    // 境界でサロゲートペアを分断して末尾が化ける。
+    const emoji = '🎨'
+    const name = emoji.repeat(300)
+    const truncated = truncateFileName(name)
+
+    expect(Array.from(truncated)).toHaveLength(MAX_FILE_NAME_LENGTH)
+    expect(truncated).toBe(emoji.repeat(MAX_FILE_NAME_LENGTH))
+    // 分断されると置換文字（U+FFFD）になったり、単独サロゲートが残る。
+    expect(truncated).not.toMatch(/�/)
+    expect(truncated).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
+  })
+
+  it('境界（255 個目が絵文字）でも壊れない', () => {
+    const name = `${'a'.repeat(MAX_FILE_NAME_LENGTH - 1)}🎨🎨`
+    const truncated = truncateFileName(name)
+
+    expect(Array.from(truncated)).toHaveLength(MAX_FILE_NAME_LENGTH)
+    expect(truncated.endsWith('🎨')).toBe(true)
   })
 })
