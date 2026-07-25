@@ -2,7 +2,7 @@
 
 > **実装済み**: monorepo 構成 / compose（db・seaweedfs・server・web）/ 開発コマンド /
 > リモート dev の切替（`.env.remote`）/ 同一オリジン配信（Phase 1-1）。
-> **計画**: `pnpm db:push`（Drizzle 導入後）/ Hono RPC による型共有（API 実装後）。
+> **計画**: Hono RPC による型共有（API 実装後）。
 
 ## 1. 技術スタック
 
@@ -74,10 +74,12 @@ pnpm build        # 全パッケージのビルド
 pnpm test         # 全パッケージ vitest run
 pnpm check        # biome（lint + format 検査）
 pnpm format       # biome で整形
-pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB 向け・計画中）
+pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB 向け）
 ```
 
-> `pnpm db:push` は Drizzle 導入後に用意する（[05](./05-roadmap.md) Phase 1-2）。
+> **`pnpm db:push` は compose 内の `server` コンテナで `drizzle-kit push` を実行する。**
+> db をホストに公開していないため、ホストから直接は繋げない（§3 の表）。スタックが起動している
+> ことが前提になる。
 
 環境変数は `.env.database` / `.env.server` / `.env.web` に分け、**`.env.*.example` だけを追跡する**。
 

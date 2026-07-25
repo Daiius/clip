@@ -15,6 +15,7 @@
     "dev:remote:logs": "docker compose --env-file .env.remote logs -f",
     "dev:remote:down": "docker compose --env-file .env.remote down",
     "down": "docker compose down",
+    "db:push": "docker compose exec -T server pnpm --filter server db:push",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
