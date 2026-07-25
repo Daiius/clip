@@ -24,6 +24,22 @@
 
 > 仕様策定の経緯（grill ログ）: [`prd/_grilling/decisions.md`](./prd/_grilling/decisions.md)
 
+## レビュー運用（oculibis）
+
+PR は `oculibis` レビュー bot に掛ける。レビュー対象の文書は
+[`.github/review-bot.json`](./.github/review-bot.json) で宣言し、**bot は default branch から読む**
+（PR head からは読まない）。
+
+```bash
+gh pr comment <PR> --body "@oculibis review"
+```
+
+- **完了はトリガーコメントに付く `+1` リアクションで判定する。** `eyes` は受理、`+1` は publish 成功。
+  **bot のコメントの有無で判定してはいけない**（managed comment は新規作成せず1つを更新し続けるため、
+  2回目以降は開始直後から既存コメントが存在し、完了と誤判定する）。
+- 指摘があれば直して**追加コミットを積み**、再度トリガーする。**指摘ゼロになるまで**繰り返す。
+- 的外れだと感じる指摘は、対応せず PR に理由をコメントして人間の判断を仰ぐ。
+
 ## Git / PR 運用
 
 - **レビュー中の PR は追加コミットを積む**。`git commit --amend` + `git push --force` はしない
