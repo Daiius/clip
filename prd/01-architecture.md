@@ -1,6 +1,8 @@
 # 01. アーキテクチャ
 
-> 本章の内容は**全て計画**（実装は未着手）。
+> **実装済み**: monorepo 構成 / compose（db・seaweedfs・server・web）/ 開発コマンド /
+> リモート dev の切替（`.env.remote`）/ 同一オリジン配信（Phase 1-1）。
+> **計画**: `pnpm db:push`（Drizzle 導入後）/ Hono RPC による型共有（API 実装後）。
 
 ## 1. 技術スタック
 
@@ -52,6 +54,16 @@ remote 公開時の外向きの口を1つに保つため）。
 | `seaweedfs` | S3 互換ストレージ | しない |
 | `server` | Hono API | しない（web の `/api` proxy 経由で届く） |
 | `web` | Vite dev サーバ | **する**（唯一の外向きの口） |
+
+**初回だけ `.env.*` を用意する。** compose が `env_file` として要求するため、これが無いと起動しない。
+
+```bash
+pnpm install
+pnpm init:env     # .env.*.example から .env.* を作る（既存ファイルは上書きしない）
+```
+
+`init:env` が作るのは **example のダミー値のまま**である。認証を実装した後は
+`AUTH_PASSWORD` と `SESSION_SECRET` を自分の値に置き換えること（[04](./04-auth-and-privacy.md) §2）。
 
 ```bash
 pnpm dev          # docker compose up --build --watch で全サービス起動
