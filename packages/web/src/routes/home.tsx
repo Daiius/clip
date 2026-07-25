@@ -29,12 +29,13 @@ export function HomePage() {
     setFailed(null)
     try {
       const page = await listClips()
-      if (current !== generation.current) return
-      setClips(page.clips)
-      setNextCursor(page.nextCursor)
+      // 早期 return しない（下の解除を飛ばさないため。loadMore と同じ理由）。
+      if (current === generation.current) {
+        setClips(page.clips)
+        setNextCursor(page.nextCursor)
+      }
     } catch {
-      if (current !== generation.current) return
-      setFailed('一覧を取得できませんでした')
+      if (current === generation.current) setFailed('一覧を取得できませんでした')
     }
     // `finally` を使わない。**React Compiler が finally 節を扱えず**、
     // panicThreshold: 'all_errors' ではビルドが落ちる（prd/01 §1）。
@@ -53,9 +54,12 @@ export function HomePage() {
     try {
       const page = await listClips(nextCursor)
       // 待っている間に reload が走っていたら、この続きはもう繋がらない。捨てる。
-      if (current !== generation.current) return
-      setClips((clips) => [...clips, ...page.clips])
-      setNextCursor(page.nextCursor)
+      // **ここで return しない。** 早期 return すると下の解除を飛ばし、ボタンが
+      // 読み込み中のまま二度と押せなくなる。
+      if (current === generation.current) {
+        setClips((clips) => [...clips, ...page.clips])
+        setNextCursor(page.nextCursor)
+      }
     } catch {
       if (current === generation.current) setFailed('続きを取得できませんでした')
     }

@@ -3,6 +3,9 @@ import { CaptureError, createImageClip, createTextClip } from '../clips.ts'
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
 
+/** allowlist 外を弾いたときの文言（prd/03 §1.4）。ペーストと D&D で同じものを出す。 */
+const UNSUPPORTED_MESSAGE = 'PNG / JPEG / GIF / WebP のみ扱えます'
+
 /**
  * 投入口（prd/03 §1）。**テキストの入力欄を作らない。**
  * 打ち込む場所は用意せず、貼られたものが増えるだけにする。
@@ -40,10 +43,18 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       if (!data) return
 
       // 画像が含まれていれば画像、無ければテキスト（人間に選ばせない。§1.1）。
-      const image = Array.from(data.files).find((file) => IMAGE_TYPES.includes(file.type))
+      const files = Array.from(data.files)
+      const image = files.find((file) => IMAGE_TYPES.includes(file.type))
       if (image) {
         event.preventDefault()
         void run(() => createImageClip(image))
+        return
+      }
+
+      // ファイルはあるが allowlist 外（SVG・PDF・zip 等）。**黙って無反応にしない**（§1.4）。
+      if (files.length > 0) {
+        event.preventDefault()
+        setError(UNSUPPORTED_MESSAGE)
         return
       }
 
@@ -66,14 +77,18 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       return
     }
 
-    await run(async () => {
-      let items: ClipboardItems
-      try {
-        items = await navigator.clipboard.read()
-      } catch {
-        throw new CaptureError('クリップボードを読めませんでした。ファイル選択をお使いください')
-      }
+    // **読み取りは run の外で試す。** ここで失敗したらファイル選択に落とすので（§1.3）、
+    // busy にしたままだとフォールバック先のボタンごと押せなくなる。
+    let items: ClipboardItems
+    try {
+      items = await navigator.clipboard.read()
+    } catch {
+      // 権限拒否・読み取り不可。ファイル選択にフォールバックする。
+      fileInput.current?.click()
+      return
+    }
 
+    await run(async () => {
       for (const item of items) {
         const imageType = item.types.find((type) => IMAGE_TYPES.includes(type))
         if (imageType) {
@@ -117,9 +132,9 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       return
     }
 
-    // 画像でもテキストでもないファイルは受け付けない（任意ファイルは対象外。§1.4）。
+    // 画像でもテキストでもないファイル（任意ファイルは対象外。§1.4）。
     if (event.dataTransfer.files.length > 0) {
-      setError('画像とテキストのみ扱えます')
+      setError(UNSUPPORTED_MESSAGE)
     }
   }
 
