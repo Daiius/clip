@@ -50,6 +50,25 @@ describe('toClip', () => {
     expect(clip).toMatchObject({ kind: 'image', fileName: null })
   })
 
+  it('text なのに画像側の列に値が入った行は例外にする（同居させない・prd/02 §1）', () => {
+    expect(() =>
+      toClip({ ...baseRow, kind: 'text', text: 'hello', blobKey: `clips/${baseRow.id}` }),
+    ).toThrow(/壊れています/)
+  })
+
+  it('image なのに text に値が入った行は例外にする（同居させない・prd/02 §1）', () => {
+    expect(() =>
+      toClip({
+        ...baseRow,
+        kind: 'image',
+        text: 'hello',
+        blobKey: `clips/${baseRow.id}`,
+        mimeType: 'image/png',
+        byteSize: 1,
+      }),
+    ).toThrow(/壊れています/)
+  })
+
   it('image なのに blobKey が無い行は例外にする（黙って落とさない）', () => {
     // 作成の途中失敗で実体を失った残骸。prd/02 §3.2 は「気づける異常」としてこれを選んでいるので、
     // 握り潰すと一覧から無言で消えてしまい、その選択が無意味になる。

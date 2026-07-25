@@ -51,6 +51,36 @@ export type TextClip = z.infer<typeof textClipSchema>
 export type ImageClip = z.infer<typeof imageClipSchema>
 
 /**
+ * DB 行の検証スキーマ。**行の全列を見る。**
+ *
+ * `kind` 側に必要な列だけを拾うと、**反対側の列に値が入った行を見逃す**
+ * （`kind='text'` なのに `blobKey` がある、`kind='image'` なのに `text` がある）。
+ * それは「1エントリはテキストか画像のどちらか一方」という前提（prd/02 §1）が崩れた行であり、
+ * アプリ層で保証すると決めた対応そのものなので、**必ず反対側が NULL であることまで検証する**。
+ */
+const textRowSchema = z.object({
+  ...clipBase,
+  kind: z.literal('text'),
+  text: z.string(),
+  blobKey: z.null(),
+  mimeType: z.null(),
+  byteSize: z.null(),
+  fileName: z.null(),
+})
+
+const imageRowSchema = z.object({
+  ...clipBase,
+  kind: z.literal('image'),
+  text: z.null(),
+  blobKey: z.string().min(1),
+  mimeType: z.enum(IMAGE_MIME_TYPES),
+  byteSize: z.number().int().nonnegative().max(MAX_IMAGE_BYTES),
+  fileName: z.string().nullable(),
+})
+
+export const clipRowSchema = z.discriminatedUnion('kind', [textRowSchema, imageRowSchema])
+
+/**
  * DB の行をドメイン表現に変換する。
  *
  * **不整合な行は例外にする。** `kind='image'` なのに `blobKey` が NULL のような行は、
@@ -58,22 +88,22 @@ export type ImageClip = z.infer<typeof imageClipSchema>
  * 黙って握り潰すと一覧が壊れた行を無言で欠落させ、**気づける異常を選んだ意味が無くなる**。
  */
 export function toClip(row: ClipRow): Clip {
-  const parsed = clipSchema.safeParse({
-    id: row.id,
-    kind: row.kind,
-    createdAt: row.createdAt,
-    ...(row.kind === 'text'
-      ? { text: row.text }
-      : {
-          blobKey: row.blobKey,
-          mimeType: row.mimeType,
-          byteSize: row.byteSize,
-          fileName: row.fileName,
-        }),
-  })
+  const parsed = clipRowSchema.safeParse(row)
 
   if (!parsed.success) {
     throw new Error(`clips の行が壊れています (id=${row.id}): ${parsed.error.message}`)
   }
-  return parsed.data
+
+  const valid = parsed.data
+  return valid.kind === 'text'
+    ? { id: valid.id, createdAt: valid.createdAt, kind: 'text', text: valid.text }
+    : {
+        id: valid.id,
+        createdAt: valid.createdAt,
+        kind: 'image',
+        blobKey: valid.blobKey,
+        mimeType: valid.mimeType,
+        byteSize: valid.byteSize,
+        fileName: valid.fileName,
+      }
 }
