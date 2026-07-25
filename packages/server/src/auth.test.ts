@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { verifyCredentials } from './auth.ts'
+import { isWithinSessionLifetime, SESSION_MAX_AGE_SEC, verifyCredentials } from './auth.ts'
 
 const USERNAME = 'me'
 const PASSWORD = 'a-32-chars-or-longer-random-string-x'
@@ -46,5 +46,32 @@ describe('verifyCredentials', () => {
     process.env.AUTH_PASSWORD = undefined
     expect(verifyCredentials('', '')).toBe(false)
     expect(verifyCredentials(USERNAME, PASSWORD)).toBe(false)
+  })
+})
+
+describe('isWithinSessionLifetime', () => {
+  const NOW = new Date('2026-07-26T00:00:00Z').getTime()
+  const MAX_AGE_MS = SESSION_MAX_AGE_SEC * 1000
+
+  it('発行直後は有効', () => {
+    expect(isWithinSessionLifetime(NOW, NOW)).toBe(true)
+  })
+
+  it('30 日ちょうどで失効する（スライディングしない）', () => {
+    expect(isWithinSessionLifetime(NOW - MAX_AGE_MS + 1, NOW)).toBe(true)
+    expect(isWithinSessionLifetime(NOW - MAX_AGE_MS, NOW)).toBe(false)
+    expect(isWithinSessionLifetime(NOW - MAX_AGE_MS * 2, NOW)).toBe(false)
+  })
+
+  it('未来に発行された cookie は受理しない', () => {
+    // 上限だけを見ると経過時間が負になって素通りする。サーバー時計が進んだ状態で発行した後に
+    // 時刻が戻ると、そのずれの分だけ期限が延びてしまう。
+    expect(isWithinSessionLifetime(NOW + 10 * 60 * 1000, NOW)).toBe(false)
+    expect(isWithinSessionLifetime(NOW + MAX_AGE_MS, NOW)).toBe(false)
+  })
+
+  it('わずかな時計の巻き戻り（60 秒以内）は許容する', () => {
+    expect(isWithinSessionLifetime(NOW + 30 * 1000, NOW)).toBe(true)
+    expect(isWithinSessionLifetime(NOW + 61 * 1000, NOW)).toBe(false)
   })
 })

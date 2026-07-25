@@ -68,14 +68,34 @@ export function revokeSession(c: Context): void {
   deleteCookie(c, SESSION_COOKIE_NAME, { path: '/', secure: isSecureCookie() })
 }
 
-/** 署名が正しく、発行から 30 日以内なら true。 */
+/**
+ * サーバー時計の巻き戻り（NTP の step 調整など）を吸収する許容幅。
+ * これを超えて「未来に発行された」cookie は受理しない。
+ */
+const CLOCK_SKEW_TOLERANCE_MS = 60 * 1000
+
+/**
+ * 発行時刻が有効期間内か。**上限だけでなく下限（未来でないこと）も見る。**
+ *
+ * 経過時間の上限だけを見ると、`issuedAt` が未来の cookie では経過時間が負になり、
+ * **条件を素通りしてしまう**。サーバー時計が進んだ状態で発行したあとに時刻が戻ると、
+ * そのずれの分だけ 30 日固定の期限が延びる。ブラウザの Max-Age が切れた後に
+ * 署名済み cookie を手で再送された場合も、延長された期間ずっと受理してしまう。
+ */
+export function isWithinSessionLifetime(issuedAt: number, now: number): boolean {
+  const elapsed = now - issuedAt
+  if (elapsed < -CLOCK_SKEW_TOLERANCE_MS) return false
+  return elapsed < SESSION_MAX_AGE_SEC * 1000
+}
+
+/** 署名が正しく、発行から 30 日以内（かつ未来でない）なら true。 */
 export async function hasValidSession(c: Context): Promise<boolean> {
   const value = await getSignedCookie(c, getSessionSecret(), SESSION_COOKIE_NAME)
   if (!value) return false
 
   const issuedAt = Number(value)
   if (!Number.isFinite(issuedAt)) return false
-  return Date.now() - issuedAt < SESSION_MAX_AGE_SEC * 1000
+  return isWithinSessionLifetime(issuedAt, Date.now())
 }
 
 /**
