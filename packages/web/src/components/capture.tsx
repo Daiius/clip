@@ -6,6 +6,9 @@ const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
 /** allowlist 外を弾いたときの文言（prd/03 §1.4）。ペーストと D&D で同じものを出す。 */
 const UNSUPPORTED_MESSAGE = 'PNG / JPEG / GIF / WebP のみ扱えます'
 
+/** 貼られたもの。経路が違っても、保存に渡す時点ではこの2種類しかない（§1.1）。 */
+type Payload = { kind: 'text'; text: string } | { kind: 'image'; file: File }
+
 /**
  * 投入口（prd/03 §1）。**テキストの入力欄を作らない。**
  * 打ち込む場所は用意せず、貼られたものが増えるだけにする。
@@ -21,16 +24,23 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragging, setDragging] = useState(false)
+  /**
+   * 保存に失敗した内容。**成功したときだけ捨てる**（prd/03 §1.4）。
+   * これを持たないと、失敗した瞬間に貼ったものが画面から消え、貼り直しを強いることになる。
+   */
+  const [pending, setPending] = useState<Payload | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const run = async (task: () => Promise<void>) => {
+  const run = async (payload: Payload) => {
     setBusy(true)
     setError(null)
     try {
-      await task()
+      await (payload.kind === 'text' ? createTextClip(payload.text) : createImageClip(payload.file))
+      setPending(null)
       onCaptured()
     } catch (cause) {
       setError(cause instanceof CaptureError ? cause.message : '保存に失敗しました')
+      setPending(payload)
     }
     // `finally` を使わない（React Compiler が扱えない。prd/01 §1）。
     setBusy(false)
@@ -47,7 +57,7 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       const image = files.find((file) => IMAGE_TYPES.includes(file.type))
       if (image) {
         event.preventDefault()
-        void run(() => createImageClip(image))
+        void run({ kind: 'image', file: image })
         return
       }
 
@@ -61,7 +71,7 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       const text = data.getData('text/plain')
       if (text) {
         event.preventDefault()
-        void run(() => createTextClip(text))
+        void run({ kind: 'text', text })
       }
     }
 
@@ -72,7 +82,7 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
   /** iPhone 用。ユーザー操作の中でだけ許可され、OS の貼り付け許可 UI が出る（§1.3）。 */
   const pasteFromClipboard = async () => {
     if (!navigator.clipboard?.read) {
-      // 読み取りが使えない環境ではファイル選択にフォールバックする。
+      // API が無い環境。ここはまだクリック直後なのでファイル選択を開ける。
       fileInput.current?.click()
       return
     }
@@ -92,28 +102,36 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       return
     }
 
-    await run(async () => {
-      for (const item of items) {
-        const imageType = item.types.find((type) => IMAGE_TYPES.includes(type))
-        if (imageType) {
-          const blob = await item.getType(imageType)
-          await createImageClip(new File([blob], 'pasted-image', { type: imageType }))
-          return
-        }
-      }
+    // 貼るものを決める。ペーストと同じく**画像が優先**（§1.1）。
+    let payload: Payload | null = null
 
+    for (const item of items) {
+      const imageType = item.types.find((type) => IMAGE_TYPES.includes(type))
+      if (imageType) {
+        const blob = await item.getType(imageType)
+        payload = { kind: 'image', file: new File([blob], 'pasted-image', { type: imageType }) }
+        break
+      }
+    }
+
+    if (!payload) {
       for (const item of items) {
         if (item.types.includes('text/plain')) {
           const text = await (await item.getType('text/plain')).text()
           if (text) {
-            await createTextClip(text)
-            return
+            payload = { kind: 'text', text }
+            break
           }
         }
       }
+    }
 
-      throw new CaptureError('クリップボードに貼れるものがありませんでした')
-    })
+    if (!payload) {
+      setError('クリップボードに貼れるものがありませんでした')
+      return
+    }
+
+    await run(payload)
   }
 
   const onDrop = (event: React.DragEvent) => {
@@ -125,14 +143,14 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       IMAGE_TYPES.includes(file.type),
     )
     if (image) {
-      void run(() => createImageClip(image))
+      void run({ kind: 'image', file: image })
       return
     }
 
     // 選択テキストのドラッグもここで拾う（拾わないと、落としても何も増えない）。
     const text = event.dataTransfer.getData('text/plain')
     if (text) {
-      void run(() => createTextClip(text))
+      void run({ kind: 'text', text })
       return
     }
 
@@ -153,7 +171,7 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
-      className={`card bg-base-100 border-2 border-dashed transition-colors ${
+      className={`card border-2 border-dashed bg-base-100 transition-colors ${
         dragging ? 'border-primary' : 'border-base-300'
       }`}
     >
@@ -192,14 +210,33 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
             const file = event.target.files?.[0]
             // 同じファイルを続けて選べるように値を戻す。
             event.target.value = ''
-            if (file) void run(() => createImageClip(file))
+            if (file) void run({ kind: 'image', file })
           }}
         />
 
         {error && (
-          <p role="alert" className="text-error text-sm">
-            {error}
-          </p>
+          <div className="flex flex-col items-center gap-2">
+            <p role="alert" className="text-error text-sm">
+              {error}
+            </p>
+
+            {/* 失敗した内容は画面に残す。貼り直しを強いない（§1.4）。 */}
+            {pending && (
+              <div className="flex max-w-full items-center gap-2">
+                <span className="truncate text-base-content/60 text-xs">
+                  {pending.kind === 'text' ? pending.text : pending.file.name || '貼り付けた画像'}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-xs"
+                  onClick={() => void run(pending)}
+                  disabled={busy}
+                >
+                  再試行
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </section>
