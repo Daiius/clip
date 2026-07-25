@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "pnpm@10.33.2",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "init:env": "for f in database server web; do [ -f .env.$f ] || cp .env.$f.example .env.$f; done",

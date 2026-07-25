@@ -11,6 +11,7 @@
 
 | 層 | 採用 |
 |---|---|
+| 実行環境 | Node.js **22.12 以上**（Vite 8 の要件。`engines.node` で宣言する） |
 | 言語 | TypeScript（フルスタック） |
 | パッケージ管理 | pnpm workspace（monorepo） |
 | DB | MySQL 8.4 |
