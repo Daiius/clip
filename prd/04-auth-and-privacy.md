@@ -23,7 +23,19 @@
 
 - ログインフォーム（`/login`）→ `POST /api/auth/login` → **署名付き cookie**（`clip_session`）を発行。
 - 認証情報は `AUTH_USERNAME` + `AUTH_PASSWORD`（`.env.server` を秘密として運用）。
-  照合は `crypto.timingSafeEqual` で**定数時間比較**する。
+
+### 照合の方法
+
+**定数時間比較を行うが、`crypto.timingSafeEqual` に文字列を Buffer 化してそのまま渡さない。**
+
+- この API は**長さの異なる Buffer を渡すと `false` ではなく例外を投げる**。素直に実装すると、
+  **長さ違いの誤入力（最も普通の打ち間違い）が認証失敗ではなく 500 になる**。
+  そのリクエストは「認証失敗」の経路を通らないため、**失敗記録にも backoff にも掛からない**。
+  総当たりの側から見れば、**長さを変えるだけで制限を回避できる**ことになる。
+- **入力値と期待値を同じハッシュ（SHA-256）で固定長にしてから `timingSafeEqual` に渡す。**
+  長さに関わらず比較でき、例外の経路そのものが無くなる。
+- **どの理由で失敗しても同じ「認証失敗」の経路を通す。** ユーザー名が違う場合とパスワードが
+  違う場合で、応答内容も所要時間も区別しない。失敗記録と backoff は必ずこの経路で適用する。
 - cookie は **HMAC 署名 + 発行時刻埋め込みで stateless**。**30 日固定有効期限**（スライディングなし）。
   署名鍵は `SESSION_SECRET`。
 - cookie 属性: `HttpOnly; SameSite=Lax`、本番は `Secure`、**`Path=/` 固定**（`COOKIE_SECURE` env で切替）。
