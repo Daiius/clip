@@ -119,6 +119,23 @@ export const clipRowSchema = z.discriminatedUnion('kind', [textRowSchema, imageR
  * 作成の途中失敗で実体を失った残骸である（prd/02 §3.2 は「気づける異常」としてこれを選んでいる）。
  * 黙って握り潰すと一覧が壊れた行を無言で欠落させ、**気づける異常を選んだ意味が無くなる**。
  */
+/**
+ * 一覧に載せる形。壊れた行は**落とさずに `broken` として出す**（prd/02 §3.2）。
+ *
+ * 削除は「S3 の実体 → DB 行」の順なので、途中で失敗すると**実体を失った行**が残る。
+ * それを選んだ理由は「気づける」ことなので、**一覧から黙って除くとその選択が無意味になる**。
+ * かといって一覧全体を 500 にすると、他の無事なエントリまで見えなくなって受け渡しに使えない。
+ */
+export type ListedClip = Clip | { id: string; kind: 'broken'; createdAt: Date }
+
+export function toListedClip(row: ClipRow): ListedClip {
+  try {
+    return toClip(row)
+  } catch {
+    return { id: row.id, kind: 'broken', createdAt: row.createdAt }
+  }
+}
+
 export function toClip(row: ClipRow): Clip {
   const parsed = clipRowSchema.safeParse(row)
 

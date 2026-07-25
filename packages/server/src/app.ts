@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator'
-import { eq } from 'drizzle-orm'
+import { desc, eq, lt } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { logger } from 'hono/logger'
@@ -17,6 +17,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_TEXT_BYTES,
   toClip,
+  toListedClip,
   truncateFileName,
 } from './clip.ts'
 import { attachmentDisposition } from './content-disposition.ts'
@@ -40,6 +41,9 @@ const LOGIN_BODY_LIMIT_BYTES = 4 * 1024
  * **中身のバイト数は別途 `MAX_IMAGE_BYTES` で厳密に見る**（ここは枠の暴走を止めるためだけの値）。
  */
 const UPLOAD_BODY_LIMIT_BYTES = MAX_IMAGE_BYTES + 1024 * 1024
+
+/** 一覧の1ページあたりの件数（prd/03 §2）。 */
+const PAGE_SIZE = 50
 
 let blobStore: BlobStore | undefined
 const getBlobStore = (): BlobStore => {
@@ -176,6 +180,57 @@ export const routes = new Hono()
       return c.json({ error: 'text か file のどちらかが必要です' } as const, 400)
     },
   )
+
+  /**
+   * 一覧（prd/03 §2）。**新しい順の時系列のみ**で、検索も絞り込みも持たない。
+   *
+   * 並び順とページングのカーソルは `id`（ULID）単独（prd/02 §2）。`createdAt` は `datetime` で
+   * 同値になりうるため、ソートキーにすると**同じ行が2ページに出たり、どこにも出なかったりする**。
+   */
+  .get(
+    '/clips',
+    sessionRequired,
+    zValidator('query', z.object({ cursor: z.string().length(26).optional() })),
+    async (c) => {
+      const { cursor } = c.req.valid('query')
+
+      // 次ページの有無を知るために1件多く取る。
+      const rows = await db
+        .select()
+        .from(clips)
+        .where(cursor ? lt(clips.id, cursor) : undefined)
+        .orderBy(desc(clips.id))
+        .limit(PAGE_SIZE + 1)
+
+      const hasMore = rows.length > PAGE_SIZE
+      const page = hasMore ? rows.slice(0, PAGE_SIZE) : rows
+
+      return c.json({
+        clips: page.map(toListedClip),
+        nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+      })
+    },
+  )
+
+  /**
+   * 削除（prd/03 §4）。**順序は S3 の実体 → DB 行**（prd/02 §3.2）。
+   *
+   * 逆順にすると、DB 行が消えた後に S3 の削除が失敗したときに**誰からも辿れない実体**が残る。
+   * この順序なら、途中で失敗しても「実体を失った行」が一覧に出るので気づける。
+   */
+  .delete('/clips/:id', sessionRequired, async (c) => {
+    const id = c.req.param('id')
+    const rows = await db.select().from(clips).where(eq(clips.id, id)).limit(1)
+    const row = rows[0]
+    if (!row) return c.json({ error: 'not found' } as const, 404)
+
+    if (row.blobKey) {
+      await getBlobStore().delete(row.blobKey)
+    }
+    await db.delete(clips).where(eq(clips.id, id))
+
+    return c.json({ ok: true } as const)
+  })
 
   /** 画像の配信（prd/02 §4.2）。**認証必須**（prd/04 §3）。 */
   .get('/clips/:id/blob', sessionRequired, async (c) => {
