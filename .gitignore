@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# test / coverage
+coverage/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# env / secrets（公開リポなので本番/開発の具体値は絶対にコミットしない）
+.env
+.env.*
+# 雛形（.env.example / .env.<name>.example）だけは追跡する
+!.env.example
+!.env.*.example
+
+# ローカル専用のエージェント向けルール/情報（gitignore。存在すれば AGENTS.md から参照）
+.claude-personal/
+
+# Playwright MCP のスクショ出力（グローバル gitignore 対象だが念のため）
+.playwright-mcp/
+
+# アップロードされた実データ（保存先の設計は prd/ で確定させる）
+/var/blob/
+**/.blob/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
