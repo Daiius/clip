@@ -1,8 +1,9 @@
 # 04. 認証とプライバシー
 
 > **実装済み**: cookie セッション認証（§2 の照合方法・cookie 属性）/ 認証 API / `/login` と
-> web のルートガード / `sessionRequired` ミドルウェア（Phase 1-3）。
-> **計画**: §3 の適用（clips の API がまだ無い）。**レート制限は MVP 外**（issue #3）。
+> web のルートガード（Phase 1-3）/ **§3 のルート保護**（`/api/clips` と画像の取得に
+> `sessionRequired` を適用。Phase 1-4）。
+> **レート制限は MVP 外**（issue #3）。
 
 本アプリは**個人用・シングルユーザー**である。認証は「自分以外に触られないため」の最小限であり、
 マルチユーザー・owner 分離は持たない（[02](./02-data-model.md)）。
