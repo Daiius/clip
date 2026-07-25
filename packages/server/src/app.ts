@@ -224,9 +224,19 @@ export const routes = new Hono()
     const row = rows[0]
     if (!row) return c.json({ error: 'not found' } as const, 404)
 
-    if (row.blobKey) {
-      await getBlobStore().delete(row.blobKey)
+    // **行に入っているキーをそのまま消さない。** 一覧は壊れた行も表示して削除を促すので
+    // （prd/02 §3.2）、ここには不整合な値が来うる。DB は「blobKey が自分の id に対応する」ことも
+    // 「他の行と重複しない」ことも保証しないため、**その値を信じると別のエントリの実体を消す**。
+    // id から導出した正規のキーと一致するときだけ消す。
+    const canonicalKey = blobKeyFor(row.id)
+    if (row.blobKey === canonicalKey) {
+      await getBlobStore().delete(canonicalKey)
+    } else if (row.blobKey) {
+      console.error(
+        `blobKey が id と対応しないため実体は消しません: id=${row.id} blobKey=${row.blobKey}`,
+      )
     }
+
     await db.delete(clips).where(eq(clips.id, id))
 
     return c.json({ ok: true } as const)
