@@ -1,8 +1,8 @@
 # 01. アーキテクチャ
 
-> **実装済み**: monorepo 構成 / compose（db・seaweedfs・server・web）/ 開発コマンド /
-> リモート dev の切替（`.env.remote`）/ 同一オリジン配信（Phase 1-1）/
-> **Hono RPC による server・web 間の API 型共有**（Phase 1-3）。
+> **本章は全て実装済み。** monorepo 構成 / compose（db・seaweedfs・server・web）/ 開発コマンド /
+> 同一オリジン配信（Phase 1-1）/ **Hono RPC による server・web 間の API 型共有**（Phase 1-3）/
+> **リモート dev 公開**（`.env.remote` による差分集約。前段プロキシ越しの動作確認済み。Phase 1-7）。
 
 ## 1. 技術スタック
 
@@ -81,8 +81,10 @@ pnpm install
 pnpm init:env     # .env.*.example から .env.* を作る（既存ファイルは上書きしない）
 ```
 
-`init:env` が作るのは **example のダミー値のまま**である。認証を実装した後は
-`AUTH_PASSWORD` と `SESSION_SECRET` を自分の値に置き換えること（[04](./04-auth-and-privacy.md) §2）。
+`init:env` が作るのは **example のダミー値のまま**である。**起動する前に** `AUTH_PASSWORD`
+（32 文字以上のランダム文字列）と `SESSION_SECRET` を自分の値へ置き換えること
+（[04](./04-auth-and-privacy.md) §2）。**ダミー値は example として公開されており、認証は
+常に有効**なので、そのまま起動すると誰でもログインできる状態になる。
 
 ```bash
 pnpm dev          # docker compose up --build --watch で全サービス起動
