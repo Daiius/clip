@@ -1,5 +1,10 @@
 import { z } from 'zod'
 import type { ClipRow } from './db/schema.ts'
+import { MAX_FILE_NAME_LENGTH, MAX_IMAGE_BYTES } from './limits.ts'
+
+// 上限は `./limits.ts` を正とする（**web からも import されるため**、zod を持ち込めない）。
+// これまでの import 元を変えずに済むよう、ここから再輸出する。
+export { MAX_FILE_NAME_LENGTH, MAX_IMAGE_BYTES, MAX_TEXT_BYTES } from './limits.ts'
 
 /**
  * 受け入れる画像形式（prd/02 §4.1）。
@@ -13,26 +18,6 @@ import type { ClipRow } from './db/schema.ts'
  */
 export const IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
 export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number]
-
-/** 1エントリあたりの画像の上限（prd/02 §5）。 */
-export const MAX_IMAGE_BYTES = 20 * 1024 * 1024
-
-/**
- * テキストの上限（prd/02 §5）。**`mediumtext` の上限そのもの**（16,777,215 バイト・UTF-8 換算）。
- *
- * 実用上ここに当たることは想定しないが、**上限を超えた入力を DB に投げると 500 になる**。
- * 利用者の入力に起因する失敗は、DB エラーではなく明示的な 4xx で返す。
- */
-export const MAX_TEXT_BYTES = 16_777_215
-
-/**
- * ファイル名の上限（`varchar(255)`）。**超えた分は切り詰める**。
- *
- * ファイル名はダウンロード時の既定名でしかなく、**長いという理由で投入を拒む価値がない**
- * （ペースト経由ではそもそも無い。prd/02 §2）。ただし DB 列に収まらないものをそのまま
- * insert すると 500 になるので、保存前に丸める。
- */
-export const MAX_FILE_NAME_LENGTH = 255
 
 /**
  * ファイル名を DB 列（`varchar(255)`）に収まる長さへ丸める。
@@ -119,6 +104,23 @@ export const clipRowSchema = z.discriminatedUnion('kind', [textRowSchema, imageR
  * 作成の途中失敗で実体を失った残骸である（prd/02 §3.2 は「気づける異常」としてこれを選んでいる）。
  * 黙って握り潰すと一覧が壊れた行を無言で欠落させ、**気づける異常を選んだ意味が無くなる**。
  */
+/**
+ * 一覧に載せる形。壊れた行は**落とさずに `broken` として出す**（prd/02 §3.2）。
+ *
+ * 削除は「S3 の実体 → DB 行」の順なので、途中で失敗すると**実体を失った行**が残る。
+ * それを選んだ理由は「気づける」ことなので、**一覧から黙って除くとその選択が無意味になる**。
+ * かといって一覧全体を 500 にすると、他の無事なエントリまで見えなくなって受け渡しに使えない。
+ */
+export type ListedClip = Clip | { id: string; kind: 'broken'; createdAt: Date }
+
+export function toListedClip(row: ClipRow): ListedClip {
+  try {
+    return toClip(row)
+  } catch {
+    return { id: row.id, kind: 'broken', createdAt: row.createdAt }
+  }
+}
+
 export function toClip(row: ClipRow): Clip {
   const parsed = clipRowSchema.safeParse(row)
 

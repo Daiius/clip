@@ -30,6 +30,18 @@
 **メモ化は React Compiler に委ねる**。`useMemo` / `useCallback` / `React.memo` は原則書かない。
 手書きで足したくなったら、まず Rules of React 違反でコンパイラが諦めていないかを疑う。
 
+**React Compiler は `panicThreshold: 'all_errors'` で動かす。** 諦めた箇所を黙って素通しにすると、
+「メモ化はコンパイラに委ねる」という前提が静かに崩れるため。代わりに、**コンパイラが扱えない
+書き方はビルドが落ちる**。⚠ **`pnpm typecheck` では検出できず、`pnpm build` で初めて分かる。**
+コンポーネント／フックの中で現時点で書けないもの:
+
+| 書けないもの | 代わりに |
+|---|---|
+| `try { } finally { }` の `finally` 節 | `catch` を return させず、解除処理を `try/catch` の後ろに置く |
+| `try` 内の value block（三項演算子・論理演算・optional chaining） | `if` / `else` に開く |
+| **`try` 内の `throw`** | 検査を `try` の外へ出し、失敗は throw せず記録する |
+| 動的 `import()` | 静的 import にする |
+
 ## 2. パッケージ構成
 
 | パッケージ | 役割 |
@@ -37,8 +49,14 @@
 | `packages/web` | UI（React + Vite + TanStack Router + Tailwind v4 + daisyUI） |
 | `packages/server` | Hono(RPC) API・DB スキーマ・BlobStore・認証 |
 
-**`shared` パッケージは作らない。** web と server が共有するのは API の型だけであり、それは
-Hono RPC が担う。共有したい純ロジックが実際に現れてから切り出す。
+**`shared` パッケージは作らない。** web と server が共有するのは、**API の型**（Hono RPC が担う）と、
+**投入の上限値**（`server/limits`）だけ。後者は web が `server` を workspace 依存として
+直接 import する。**共有物が2つ現れた程度で中間パッケージを作らない。**
+
+> 上限値を web 側へ**書き写さない**のは、サーバーの上限を上げたときにクライアントだけが
+> 古い値のまま厳しくなり、**正しい画像が投入できなくなる**ため（利用者が回避できない向きの
+> 誤判定になる。[03](./03-ux.md) §1.4）。そのため `server/limits` には
+> **zod も drizzle も持ち込まない**（定数だけを置き、ブラウザ側の束にサーバー専用コードを混ぜない）。
 
 **DB スキーマは `packages/server` 内に置く**（`database` パッケージに分けない）。テーブルが1つの
 規模で分割の定型句を先に払う理由がない（[02](./02-data-model.md)）。
