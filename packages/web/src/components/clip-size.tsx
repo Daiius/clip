@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ListedClip } from '../clips.ts'
-import { countCharacters, formatBytes, textByteLength } from '../format.ts'
+import { formatBytes, measureText } from '../format.ts'
 
 /** 画像の原寸。**`img` が読み込まれて初めて分かる**（下記の理由で DB には持たない）。 */
 export type Dimensions = { width: number; height: number }
@@ -14,7 +14,9 @@ export type Dimensions = { width: number; height: number }
  */
 function sizeLabels(clip: ListedClip, dimensions: Dimensions | null): string[] {
   if (clip.kind === 'text') {
-    return [`${countCharacters(clip.text)} 文字`, formatBytes(textByteLength(clip.text))]
+    // **走査は1回だけ。** 文字数とバイト数を別々に数えると本文を2周する（`format.ts`）。
+    const { characters, bytes } = measureText(clip.text)
+    return [`${characters} 文字`, formatBytes(bytes)]
   }
 
   if (clip.kind === 'image') {

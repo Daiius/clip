@@ -29,18 +29,55 @@ export function formatBytes(bytes: number): string {
   return `${round1(bytes / UNIT / UNIT).toFixed(1)} MB`
 }
 
+/** テキストの規模。文字数（コードポイント）とデータ量（UTF-8 バイト数）。 */
+export type TextSize = { characters: number; bytes: number }
+
 /**
- * 文字数。**コードポイント単位で数える。**
+ * テキストの文字数とバイト数を、**走査1回・追加確保なしで**同時に数える。
  *
- * `String.length` は UTF-16 のコード単位なので、**絵文字など BMP 外の文字が 2 と数えられる**。
- * 「何文字貼ったか」を見せるのが目的なので、見た目の数に近いコードポイントで数える
- * （`fileName` を 255 コードポイントで丸めているのと同じ基準。prd/02 §5）。
+ * 数え方の理由:
+ *
+ * - **文字数はコードポイント単位。** `String.length` は UTF-16 のコード単位なので、
+ *   **絵文字など BMP 外の文字が 2 と数えられる**。「何文字貼ったか」を見せるのが目的なので、
+ *   見た目の数に近いコードポイントで数える（`fileName` を 255 コードポイントで丸めているのと
+ *   同じ基準。prd/02 §5）。
+ * - **バイト数は UTF-8。** サーバーが `Buffer.byteLength(text, 'utf8')` で上限
+ *   （`MAX_TEXT_BYTES`）を判定しているので、同じ数え方でなければ表示と上限が食い違う。
+ *
+ * ⚠ **`Array.from(text)` や `TextEncoder().encode(text)` は使えない。** どちらも本文全体分を
+ * 新たに確保するが、テキストの上限は 16,777,215 バイトで、一覧は 50 件を一度に描画する
+ * （prd/02 §5 / prd/03 §2）。**正規の保存データだけでタブが停止しうる。**
  */
-export function countCharacters(text: string): number {
-  return Array.from(text).length
+export function measureText(text: string): TextSize {
+  let characters = 0
+  let bytes = 0
+
+  for (let i = 0; i < text.length; i++) {
+    // `charCodeAt` は UTF-16 のコード単位を返すので、サロゲートペアは自分で組む。
+    // `codePointAt` でも書けるが、進めた分を別途数え直すことになる。
+    const unit = text.charCodeAt(i)
+    characters++
+
+    if (unit < 0x80) {
+      bytes += 1
+    } else if (unit < 0x800) {
+      bytes += 2
+    } else if (unit >= 0xd800 && unit <= 0xdbff && isLowSurrogate(text.charCodeAt(i + 1))) {
+      // 対になったサロゲート = BMP 外の1文字。UTF-8 では 4 バイト。
+      bytes += 4
+      i++
+    } else {
+      // 対を成さないサロゲートもここに落ちる。**`Buffer.byteLength` / `TextEncoder` は
+      // これを U+FFFD（3 バイト）に置き換える**ので、同じく 3 として数える
+      // （壊れた入力でサーバーの上限判定と食い違わせない）。
+      bytes += 3
+    }
+  }
+
+  return { characters, bytes }
 }
 
-/** テキストのデータ量（UTF-8 バイト数）。DB の上限と同じ数え方（prd/02 §5）。 */
-export function textByteLength(text: string): number {
-  return new TextEncoder().encode(text).byteLength
+/** 末尾を超えた `charCodeAt` は `NaN` を返すので、比較は自然に false になる。 */
+function isLowSurrogate(unit: number): boolean {
+  return unit >= 0xdc00 && unit <= 0xdfff
 }
