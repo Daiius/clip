@@ -53,9 +53,9 @@
 ## 文書索引
 
 1. [01-architecture.md](./01-architecture.md) — 技術スタック / monorepo / 開発環境 / デプロイ姿勢
-2. [02-data-model.md](./02-data-model.md) — DB スキーマ（clips）/ BlobStore / 画像の配信
-3. [03-ux.md](./03-ux.md) — 投入口 / 一覧とプレビュー / 取り出し / 削除 / 端末ごとの経路
-4. [04-auth-and-privacy.md](./04-auth-and-privacy.md) — 認証 / ルート保護 / 公開配置の前提
+2. [02-data-model.md](./02-data-model.md) — DB スキーマ（clips / shares）/ BlobStore / 画像の配信
+3. [03-ux.md](./03-ux.md) — 投入口 / 一覧とプレビュー / 取り出し / 削除 / 共有 / 端末ごとの経路
+4. [04-auth-and-privacy.md](./04-auth-and-privacy.md) — 認証 / ルート保護 / 共有トークン / 公開配置の前提
 5. [05-roadmap.md](./05-roadmap.md) — フェーズ分け / 未実装・計画中 / 確定事項
 
 ## 秘匿方針（公開リポジトリ）
