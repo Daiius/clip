@@ -10,6 +10,15 @@ const UNSUPPORTED_MESSAGE = 'PNG / JPEG / GIF / WebP のみ扱えます'
 type Payload = { kind: 'text'; text: string } | { kind: 'image'; file: File }
 
 /**
+ * 保存に失敗した投入1件。**投入ごとに独立して持つ。**
+ *
+ * 単一の状態にまとめると、**同時に走った別の投入の成功が、失敗した内容と再試行導線を消す**
+ * （ページ全体の paste と D&D は保存中でも新しい投入を始められるため、これは実際に起きる）。
+ * それでは「保存に失敗した投入内容を画面から消さない」（§1.4）を満たせない。
+ */
+type Failure = { id: number; payload: Payload; message: string }
+
+/**
  * 投入口（prd/03 §1）。**テキストの入力欄を作らない。**
  * 打ち込む場所は用意せず、貼られたものが増えるだけにする。
  *
@@ -21,18 +30,27 @@ type Payload = { kind: 'text'; text: string } | { kind: 'image'; file: File }
  * - **D&D / ファイル選択** — 画像のみ
  */
 export function Capture({ onCaptured }: { onCaptured: () => void }) {
+  /** 投入に**至らなかった**理由（allowlist 外・クリップボード拒否など）。内容を伴わない。 */
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
   const [dragging, setDragging] = useState(false)
+  /** 保存に失敗した内容。**成功したときだけ、その1件を捨てる**（prd/03 §1.4）。 */
+  const [failures, setFailures] = useState<Failure[]>([])
   /**
-   * 保存に失敗した内容。**成功したときだけ捨てる**（prd/03 §1.4）。
-   * これを持たないと、失敗した瞬間に貼ったものが画面から消え、貼り直しを強いることになる。
+   * 進行中の投入の数。真偽値にすると、**同時に走ったうちの最初の1件が終わった時点で
+   * 解除されてしまい**、まだ保存中なのにボタンが押せるようになる。
    */
-  const [pending, setPending] = useState<Payload | null>(null)
+  const [inFlight, setInFlight] = useState(0)
+  const busy = inFlight > 0
+  const nextFailureId = useRef(0)
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const run = async (payload: Payload) => {
-    setBusy(true)
+  /**
+   * 保存する。`retryOf` があれば、その失敗の再試行として扱う。
+   *
+   * **複数が同時に走りうる**ので、成否はどれも「自分の1件」にしか触らない。
+   */
+  const run = async (payload: Payload, retryOf?: number) => {
+    setInFlight((count) => count + 1)
     setError(null)
     try {
       // 三項演算子にしない。**React Compiler は try 内の value block を扱えない**
@@ -42,14 +60,29 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       } else {
         await createImageClip(payload.file)
       }
-      setPending(null)
+      // 消すのは**この要求に対応する失敗だけ**。同時に走った別の投入の失敗は残す。
+      if (retryOf !== undefined) {
+        setFailures((failures) => failures.filter((failure) => failure.id !== retryOf))
+      }
       onCaptured()
     } catch (cause) {
-      setError(cause instanceof CaptureError ? cause.message : '保存に失敗しました')
-      setPending(payload)
+      const message = cause instanceof CaptureError ? cause.message : '保存に失敗しました'
+      if (retryOf !== undefined) {
+        // 再試行がまた失敗した場合。同じ内容を二重に並べず、理由だけ差し替える。
+        setFailures((failures) =>
+          failures.map((failure) => {
+            if (failure.id !== retryOf) return failure
+            return { ...failure, message }
+          }),
+        )
+      } else {
+        const id = nextFailureId.current++
+        setFailures((failures) => [...failures, { id, payload, message }])
+      }
     }
     // `finally` を使わない（React Compiler が扱えない。prd/01 §1）。
-    setBusy(false)
+    // カウンタを戻すだけなので、**全要求が終わって初めて busy が解除される**。
+    setInFlight((count) => count - 1)
   }
 
   // ページ全体でペーストを拾う。**入力欄にフォーカスしていなくても効く**のが狙い。
@@ -221,28 +254,38 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
         />
 
         {error && (
-          <div className="flex flex-col items-center gap-2">
-            <p role="alert" className="text-error text-sm">
-              {error}
-            </p>
+          <p role="alert" className="text-error text-sm">
+            {error}
+          </p>
+        )}
 
-            {/* 失敗した内容は画面に残す。貼り直しを強いない（§1.4）。 */}
-            {pending && (
-              <div className="flex max-w-full items-center gap-2">
-                <span className="truncate text-base-content/60 text-xs">
-                  {pending.kind === 'text' ? pending.text : pending.file.name || '貼り付けた画像'}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-xs"
-                  onClick={() => void run(pending)}
-                  disabled={busy}
-                >
-                  再試行
-                </button>
-              </div>
-            )}
-          </div>
+        {/* 失敗した内容は画面に残す。貼り直しを強いない（§1.4）。
+         **同時に投入した複数が失敗しうる**ので、1件ずつ並べて個別に再試行させる。 */}
+        {failures.length > 0 && (
+          <ul className="flex w-full flex-col items-center gap-2">
+            {failures.map((failure) => (
+              <li key={failure.id} className="flex max-w-full flex-col items-center gap-1">
+                <p role="alert" className="text-error text-sm">
+                  {failure.message}
+                </p>
+                <div className="flex max-w-full items-center gap-2">
+                  <span className="truncate text-base-content/60 text-xs">
+                    {failure.payload.kind === 'text'
+                      ? failure.payload.text
+                      : failure.payload.file.name || '貼り付けた画像'}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-xs"
+                    onClick={() => void run(failure.payload, failure.id)}
+                    disabled={busy}
+                  >
+                    再試行
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </section>
