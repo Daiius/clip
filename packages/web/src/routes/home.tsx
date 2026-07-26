@@ -26,7 +26,9 @@ export function HomePage() {
   const [failed, setFailed] = useState<string | null>(null)
   const [loggingOut, setLoggingOut] = useState(false)
   /**
-   * 共有する対象の選択（prd/03 §6）。**一覧の並びで順序を決める**ので、集合だけを持つ。
+   * 共有する対象の選択（prd/03 §6）。**これが唯一の真実**で、表示中の一覧とは独立している。
+   *
+   * 順序は ULID から復元できるので（下記 `selectedInOrder`）、集合だけを持てば足りる。
    *
    * ⚠ **`Set` を書き換えず、毎回作り直す。** 同一参照のまま中身を変えると、React が
    * 変化に気づかない（メモ化は React Compiler に委ねている。prd/01 §1）。
@@ -113,12 +115,33 @@ export function HomePage() {
   }
 
   /**
-   * 一覧の並びのまま、選択されているものだけを返す。
+   * 共有する対象を、一覧と同じ「新しい順」に並べる。
    *
-   * **選択した順ではなく一覧の順にする。** 受け手に渡るマニフェストの行順が
-   * 「新しい順」（prd/03 §2）と一致していた方が、画面と突き合わせやすい。
+   * ⚠ **表示中の `clips` で絞り込まない。** 投入や削除で `reload` が走ると一覧は先頭 50 件に
+   * 戻るが、選択は保たれる。絞り込むと、**「もっと見る」で選んだものがチェックされたまま
+   * 共有対象から黙って消える**（そして上限の枠だけは消費し続ける）。
+   * バーの件数と実際に渡すものが食い違うので、**`selectedIds` を唯一の真実にする**。
+   *
+   * 並びは **ULID の降順**で足りる。辞書順が生成時刻順なので、一覧の総順序
+   * （`id` の降順単独。prd/02 §2）と一致する——**表示中の配列を見に行く必要がない**。
    */
-  const selectedInOrder = clips.filter((clip) => selectedIds.has(clip.id)).map((clip) => clip.id)
+  const selectedInOrder = [...selectedIds].sort().reverse()
+
+  /**
+   * 削除されたものは選択から外す。
+   *
+   * 残すと、消えた clip を含んだまま発行して必ず 409 になる（`clips.ts`）。
+   * **ページ外に出ただけのもの（上記）とは違い、これは本当に渡せない。**
+   */
+  const handleDeleted = (id: string) => {
+    setSelectedIds((current) => {
+      if (!current.has(id)) return current
+      const next = new Set(current)
+      next.delete(id)
+      return next
+    })
+    void reload()
+  }
 
   const logout = async () => {
     setLoggingOut(true)
@@ -172,7 +195,7 @@ export function HomePage() {
             hasMore={next !== null}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
-            onChanged={reload}
+            onDeleted={handleDeleted}
           />
         )}
 

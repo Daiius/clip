@@ -13,7 +13,7 @@ export function ClipList({
   hasMore,
   loadingMore,
   onLoadMore,
-  onChanged,
+  onDeleted,
 }: {
   clips: ListedClip[]
   selectedIds: ReadonlySet<string>
@@ -23,7 +23,8 @@ export function ClipList({
   hasMore: boolean
   loadingMore: boolean
   onLoadMore: () => void
-  onChanged: () => void
+  /** 削除された。**id を渡す**ので、呼び出し側は選択からも外せる（prd/03 §6）。 */
+  onDeleted: (id: string) => void
 }) {
   if (clips.length === 0) {
     return (
@@ -43,7 +44,7 @@ export function ClipList({
             selected={selectedIds.has(clip.id)}
             selectDisabled={selectAtLimit}
             onSelectedChange={(selected) => onSelectedChange(clip.id, selected)}
-            onDeleted={onChanged}
+            onDeleted={() => onDeleted(clip.id)}
           />
         ))}
       </ul>
