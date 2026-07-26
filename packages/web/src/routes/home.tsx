@@ -7,9 +7,18 @@ import { ClipList } from '../components/clip-list.tsx'
 /**
  * 投入口と一覧（prd/03）。貼ったものがそのまま下に増えていく。
  */
+/**
+ * 次ページのカーソルと、**それを取ってきた世代**。
+ *
+ * カーソル単体で持つと、reload が走った後も**変更前の境界**が新しい世代番号で使われてしまう
+ * （`loadMore` は開始時点の `generation` を見るが、カーソルは reload 前の値のままのため）。
+ * 取得元の世代を貼り付けておき、**先頭ページが確定した世代のカーソルしか使わない**。
+ */
+type Next = { cursor: string; generation: number }
+
 export function HomePage() {
   const [clips, setClips] = useState<ListedClip[]>([])
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [next, setNext] = useState<Next | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
@@ -26,13 +35,21 @@ export function HomePage() {
   /** 先頭から読み直す。投入・削除のあとはこれで揃える。 */
   const reload = useCallback(async () => {
     const current = ++generation.current
+    // **古いカーソルをここで捨てる。** 残したままだと、応答を待っている間に「もっと見る」を
+    // 押せてしまい、変更前の境界の続きが新しい一覧に継ぎ足される。
+    setNext(null)
     setFailed(null)
     try {
       const page = await listClips()
       // 早期 return しない（下の解除を飛ばさないため。loadMore と同じ理由）。
       if (current === generation.current) {
         setClips(page.clips)
-        setNextCursor(page.nextCursor)
+        // 三項演算子にしない。**React Compiler は try 内の value block を扱えない**（prd/01 §1）。
+        if (page.nextCursor) {
+          setNext({ cursor: page.nextCursor, generation: current })
+        } else {
+          setNext(null)
+        }
       }
     } catch {
       if (current === generation.current) setFailed('一覧を取得できませんでした')
@@ -48,17 +65,25 @@ export function HomePage() {
   }, [reload])
 
   const loadMore = async () => {
-    if (!nextCursor) return
+    // **世代の合わないカーソルは使わない。** reload の開始で `next` は捨てられるが、
+    // 同じ tick での取りこぼしに備えて世代でも照合する（reload と loadMore の応答が
+    // どちらの順で返っても、古い境界の続きが繋がらないようにする）。
+    if (!next || next.generation !== generation.current) return
     const current = generation.current
     setLoadingMore(true)
     try {
-      const page = await listClips(nextCursor)
+      const page = await listClips(next.cursor)
       // 待っている間に reload が走っていたら、この続きはもう繋がらない。捨てる。
       // **ここで return しない。** 早期 return すると下の解除を飛ばし、ボタンが
       // 読み込み中のまま二度と押せなくなる。
       if (current === generation.current) {
         setClips((clips) => [...clips, ...page.clips])
-        setNextCursor(page.nextCursor)
+        // ここも三項演算子にしない（try 内の value block。prd/01 §1）。
+        if (page.nextCursor) {
+          setNext({ cursor: page.nextCursor, generation: current })
+        } else {
+          setNext(null)
+        }
       }
     } catch {
       if (current === generation.current) setFailed('続きを取得できませんでした')
@@ -112,7 +137,7 @@ export function HomePage() {
         ) : (
           <ClipList
             clips={clips}
-            hasMore={nextCursor !== null}
+            hasMore={next !== null}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
             onChanged={reload}
