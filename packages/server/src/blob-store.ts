@@ -19,6 +19,32 @@ export interface BlobStore {
   delete(key: string): Promise<void>
 }
 
+/**
+ * 実体が無い（prd/02 §3.2）。**ストレージ障害とは区別する。**
+ *
+ * 削除は「S3 の実体 → DB 行」の順なので、途中で失敗すると**実体を失った行**が残る。
+ * これは意図して選んだ「気づける異常」であり、**起こりうる正常系**である。
+ * 呼び出し側がこれを 404 に変換できるよう、他の失敗と型で分ける
+ * （区別せず全部 500 にすると、無認証の共有経路で応答の意味が変わってしまう）。
+ */
+export class BlobNotFoundError extends Error {
+  constructor(key: string) {
+    super(`blob が見つかりません (key=${key})`)
+    this.name = 'BlobNotFoundError'
+  }
+}
+
+/**
+ * S3 の「オブジェクトが無い」応答か。
+ *
+ * SDK は `NoSuchKey` を投げるが、**S3 互換実装では名前が揺れる**ので HTTP 404 も見る。
+ */
+function isNotFound(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  const e = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } }
+  return e.name === 'NoSuchKey' || e.name === 'NotFound' || e.$metadata?.httpStatusCode === 404
+}
+
 const required = (name: string): string => {
   const value = process.env[name]
   if (!value) throw new Error(`${name} is required`)
@@ -90,8 +116,16 @@ export function createS3BlobStore(): BlobStore {
 
     async get(key) {
       await ensureBucket(bucket)
-      const result = await getClient().send(new GetObjectCommand({ Bucket: bucket, Key: key }))
-      if (!result.Body) throw new Error(`blob が空です (key=${key})`)
+
+      const result = await getClient()
+        .send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+        .catch((error: unknown) => {
+          // **「無い」だけを型で分ける。** 障害はそのまま投げ、500 のままにする。
+          if (isNotFound(error)) throw new BlobNotFoundError(key)
+          throw error
+        })
+
+      if (!result.Body) throw new BlobNotFoundError(key)
 
       return {
         body: result.Body.transformToWebStream() as ReadableStream<Uint8Array>,

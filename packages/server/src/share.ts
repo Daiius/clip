@@ -50,6 +50,21 @@ export const createShareSchema = z.object({
 })
 
 /**
+ * DB から読んだ共有行の検証。
+ *
+ * ⚠ **JSON 列の構造は DB が保証しない**（prd/02 §6 は「アプリ層の zod 検証を正とする」）。
+ * Drizzle の `$type<string[]>()` は**静的な注釈にすぎず、実行時には何も確かめない**。
+ * 壊れた行をそのまま信じると `inArray` や `includes` が例外になり、
+ * **無認証の共有経路が 500 を返す**——理由を区別しない 404 という境界が崩れる。
+ */
+export const shareRowSchema = z.object({
+  id: z.string().length(26),
+  clipIds: z.array(z.string().length(26)).max(MAX_SHARE_CLIPS),
+})
+
+export type ValidShare = z.infer<typeof shareRowSchema>
+
+/**
  * メンバー URL のファイル名部分（`<id>.<ext>`）。
  *
  * **拡張子を付けるのは受け手のため。** 付けないと保存したファイルが何なのか分からず、

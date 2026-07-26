@@ -12,7 +12,7 @@ import {
   sessionRequired,
   verifyCredentials,
 } from './auth.ts'
-import { type BlobStore, blobKeyFor, createS3BlobStore } from './blob-store.ts'
+import { BlobNotFoundError, type BlobStore, blobKeyFor, createS3BlobStore } from './blob-store.ts'
 import {
   type Clip,
   IMAGE_EXTENSIONS,
@@ -36,6 +36,8 @@ import {
   memberFileName,
   newShareToken,
   parseMemberId,
+  shareRowSchema,
+  type ValidShare,
 } from './share.ts'
 
 /**
@@ -404,20 +406,44 @@ export const shareRoutes = new Hono()
       })
     }
 
-    const { body } = await getBlobStore().get(clip.blobKey)
+    // **実体が無いのは起こりうる正常系**（削除の途中失敗。prd/02 §3.2）。
+    // 一覧は「壊れています」と見せて削除を促せるが、共有の受け手にその導線は無い。
+    // **他の 404 と同じ応答に畳む**（理由を区別しないという境界を保つ。prd/04 §3.1）。
+    // ⚠ ストレージ障害はここで畳まない。500 のままにして、異常を異常として出す。
+    const blob = await getBlobStore()
+      .get(clip.blobKey)
+      .catch((error: unknown) => {
+        if (error instanceof BlobNotFoundError) return null
+        throw error
+      })
+    if (!blob) return notFound()
+
     const headers = sharedHeaders(clip.mimeType, memberFileName(clip))
     headers.set('Content-Length', String(clip.byteSize))
-    return new Response(body, { headers })
+    return new Response(blob.body, { headers })
   })
 
 /** 有効な共有だけを返す。**期限切れは存在しないものとして扱う**（prd/04 §3.1）。 */
-async function findShare(token: string): Promise<{ id: string; clipIds: string[] } | undefined> {
+async function findShare(token: string): Promise<ValidShare | undefined> {
   const rows = await db
     .select()
     .from(shares)
     .where(and(eq(shares.tokenHash, hashShareToken(token)), gt(shares.expiresAt, new Date())))
     .limit(1)
-  return rows[0]
+
+  const row = rows[0]
+  if (!row) return undefined
+
+  // **JSON 列の中身を実行時に確かめる**（prd/02 §6）。Drizzle の `$type<string[]>()` は
+  // 静的な注釈にすぎず、壊れた行を素通しする。信じると `includes` などで例外になり、
+  // **無認証の経路が 500 を返して**「理由を区別しない 404」という境界が崩れる。
+  const parsed = shareRowSchema.safeParse(row)
+  if (!parsed.success) {
+    // **トークンは書かない**（prd/04 §3.1）。id だけで行は特定できる。
+    console.error(`shares の行が壊れています (id=${row.id})`)
+    return undefined
+  }
+  return parsed.data
 }
 
 /**

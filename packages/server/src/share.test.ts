@@ -9,6 +9,7 @@ import {
   memberFileName,
   newShareToken,
   parseMemberId,
+  shareRowSchema,
 } from './share.ts'
 
 const ID = '01KYDF5KC3G0KCAQAPHWBNKVKD'
@@ -83,6 +84,32 @@ describe('createShareSchema', () => {
 
   it('ULID の長さでないものを拒む', () => {
     expect(createShareSchema.safeParse({ clipIds: ['short'] }).success).toBe(false)
+  })
+})
+
+describe('shareRowSchema', () => {
+  it('正しい行を通す', () => {
+    expect(shareRowSchema.safeParse({ id: ID, clipIds: [ID, OTHER_ID] }).success).toBe(true)
+    // 対象が全部消えた共有は空配列になりうる（マニフェストが空になるだけで、壊れてはいない）。
+    expect(shareRowSchema.safeParse({ id: ID, clipIds: [] }).success).toBe(true)
+  })
+
+  it('JSON 列が配列でない行を弾く', () => {
+    // DB は構造を保証しない。信じると includes などで例外になり、
+    // **無認証の経路が 500 を返す**（理由を区別しない 404 という境界が崩れる）。
+    for (const clipIds of [null, 'not-an-array', 42, { 0: ID }]) {
+      expect(shareRowSchema.safeParse({ id: ID, clipIds }).success, String(clipIds)).toBe(false)
+    }
+  })
+
+  it('要素が ULID の形でない行を弾く', () => {
+    expect(shareRowSchema.safeParse({ id: ID, clipIds: ['short'] }).success).toBe(false)
+    expect(shareRowSchema.safeParse({ id: ID, clipIds: [null] }).success).toBe(false)
+  })
+
+  it('上限を超えた行を弾く', () => {
+    const ids = Array.from({ length: MAX_SHARE_CLIPS + 1 }, (_, i) => String(i).padStart(26, '0'))
+    expect(shareRowSchema.safeParse({ id: ID, clipIds: ids }).success).toBe(false)
   })
 })
 
