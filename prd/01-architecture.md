@@ -71,8 +71,13 @@ remote 公開時の外向きの口を1つに保つため）。
 |---|---|---|
 | `db` | MySQL 8.4 | しない |
 | `seaweedfs` | S3 互換ストレージ | しない |
-| `server` | Hono API | しない（web の `/api` proxy 経由で届く） |
+| `server` | Hono API | しない（web の proxy 経由で届く） |
 | `web` | Vite dev サーバ | **する**（唯一の外向きの口） |
+
+**Vite が server へ転送するのは `/api` と `/s`**（[04](./04-auth-and-privacy.md) §3.1 の共有パス）。
+ここに載っていないパスは Vite の SPA フォールバックに落ち、**`index.html` が返る**。
+**サーバー側にルートを足すときは、この転送設定にも足す**（忘れると、実装したはずの API が
+静かに `index.html` を返す）。
 
 **初回だけ `.env.*` を用意する。** compose が `env_file` として要求するため、これが無いと起動しない。
 
@@ -116,6 +121,25 @@ pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB �
 | web の公開バインド | 全 IF | ループバックのみ | compose `${WEB_BIND}` |
 | secure cookie | `false` | `true` | compose `${COOKIE_SECURE}` → server |
 | Vite の許可ホスト / HMR | なし | `allowedHosts` + `hmr wss:443` | `${PUBLIC_ORIGIN}` から host を導出して `vite.config.ts` が判定 |
+| 共有 URL のオリジン | `http://localhost:5173`（既定値） | `${PUBLIC_ORIGIN}` | server が組み立てる（[03](./03-ux.md) §6） |
+
+**共有リンクに書く絶対 URL のオリジンは、`PUBLIC_ORIGIN` から取る。未設定ならローカル dev の
+既定値（`http://localhost:5173` = web の公開ポート）を使う。**
+
+⚠ **リクエストの `Host` ヘッダからは組めない。** 一見すると「**取りに来られたホストは、
+その受け手にとって到達可能だと実証済み**」という筋の通った案に見えるが、**この構成では成立しない**:
+
+- **dev では Vite の proxy が `changeOrigin: true` で Host を書き換える。** server が見るのは
+  利用者のオリジンではなく転送先（`server:4000`）であり、そこから組んだ URL は
+  **ホストに公開していない server を指す**（§3 の表）。ブラウザからも受け手からも届かない。
+- **remote では正しいスキームが得られない。** 前段は平文でコンテナへ繋ぐので server が見るのは
+  `http` であり、`https` を組むには `X-Forwarded-Proto` を信じる必要がある。
+  [04](./04-auth-and-privacy.md) §1 が**前段を前提にしない**と宣言している以上、
+  前段のヘッダ設定に正しさを預けない。
+
+つまり **server は自分の公開オリジンを発見できない。設定として受け取るしかない。**
+ローカルの既定値は `WEB_BIND` の既定（5173）と対応する。**別のポートで公開するなら
+`PUBLIC_ORIGIN` を設定する**（既定値のままだと、届かない URL のリンクが黙って発行される）。
 
 **具体的なバインドアドレス・ポート・ドメイン・前段の設定は公開しない**（`.env.remote` と
 `.claude-personal/`）。
