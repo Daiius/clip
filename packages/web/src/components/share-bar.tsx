@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { MAX_SHARE_CLIPS } from 'server/limits'
 import { createShare, revokeShare, type Share } from '../clips.ts'
 
 /**
@@ -36,7 +37,16 @@ function formatExpiry(iso: string): string {
  * 発行したらリンクを画面に出し、同時にクリップボードへ入れる（§3 の
  * 「コピーボタンを探させない」と同じ姿勢）。
  */
-export function ShareBar({ selectedIds, onClear }: { selectedIds: string[]; onClear: () => void }) {
+export function ShareBar({
+  selectedIds,
+  atLimit,
+  onClear,
+}: {
+  selectedIds: string[]
+  /** 上限に達している（prd/02 §5）。**なぜこれ以上選べないのかを言う。** */
+  atLimit: boolean
+  onClear: () => void
+}) {
   const [busy, setBusy] = useState(false)
   const [share, setShare] = useState<Share | null>(null)
   const [copied, setCopied] = useState(false)
@@ -113,7 +123,15 @@ export function ShareBar({ selectedIds, onClear }: { selectedIds: string[]; onCl
         </div>
       ) : (
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm">{selectedIds.length} 件を選択中</span>
+          <span className="text-sm">
+            {selectedIds.length} 件を選択中
+            {/* 押せないチェックボックスの理由を必ず言う。黙って無効にすると壊れて見える。 */}
+            {atLimit && (
+              <span className="ml-1 text-base-content/60">
+                （1回に渡せるのは {MAX_SHARE_CLIPS} 件までです）
+              </span>
+            )}
+          </span>
           <div className="flex items-center gap-2">
             <button
               type="button"

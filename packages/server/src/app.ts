@@ -373,7 +373,9 @@ export const shareRoutes = new Hono()
 
     const clips = await findClipsInOrder(found.clipIds)
     return new Response(buildManifest(publicOrigin(), c.req.param('token'), clips), {
-      headers: sharedHeaders('text/plain; charset=utf-8'),
+      // **マニフェストにも `attachment` を付ける**（prd/04 §3.1）。無認証・同一オリジンで
+      // inline 表示させないという条件は、実体だけでなくこの経路にも掛かる。
+      headers: sharedHeaders('text/plain; charset=utf-8', 'clip-share.txt'),
     })
   })
 

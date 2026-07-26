@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { MAX_SHARE_CLIPS } from 'server/limits'
 import { api } from '../api.ts'
 import { type ListedClip, listClips } from '../clips.ts'
 import { Capture } from '../components/capture.tsx'
@@ -166,6 +167,7 @@ export function HomePage() {
           <ClipList
             clips={clips}
             selectedIds={selectedIds}
+            selectAtLimit={selectedIds.size >= MAX_SHARE_CLIPS}
             onSelectedChange={setSelected}
             hasMore={next !== null}
             loadingMore={loadingMore}
@@ -174,7 +176,11 @@ export function HomePage() {
           />
         )}
 
-        <ShareBar selectedIds={selectedInOrder} onClear={() => setSelectedIds(new Set())} />
+        <ShareBar
+          selectedIds={selectedInOrder}
+          atLimit={selectedIds.size >= MAX_SHARE_CLIPS}
+          onClear={() => setSelectedIds(new Set())}
+        />
       </div>
     </main>
   )

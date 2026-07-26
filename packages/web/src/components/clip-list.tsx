@@ -8,6 +8,7 @@ import { ClipCard } from './clip-card.tsx'
 export function ClipList({
   clips,
   selectedIds,
+  selectAtLimit,
   onSelectedChange,
   hasMore,
   loadingMore,
@@ -16,6 +17,8 @@ export function ClipList({
 }: {
   clips: ListedClip[]
   selectedIds: ReadonlySet<string>
+  /** 選択が上限に達している（prd/03 §6）。未選択のチェックボックスを押せなくする。 */
+  selectAtLimit: boolean
   onSelectedChange: (id: string, selected: boolean) => void
   hasMore: boolean
   loadingMore: boolean
@@ -38,6 +41,7 @@ export function ClipList({
             key={clip.id}
             clip={clip}
             selected={selectedIds.has(clip.id)}
+            selectDisabled={selectAtLimit}
             onSelectedChange={(selected) => onSelectedChange(clip.id, selected)}
             onDeleted={onChanged}
           />
