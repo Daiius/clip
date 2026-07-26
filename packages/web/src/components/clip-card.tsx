@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { deleteClip, type ListedClip } from '../clips.ts'
+import { ClipSize, type Dimensions } from './clip-size.tsx'
+import { ArrowDownTrayIcon, TrashIcon } from './icons.tsx'
 
 /** 長いテキストは折りたたむ（prd/03 §2）。 */
 const FOLD_THRESHOLD = 400
@@ -42,6 +44,13 @@ export function ClipCard({ clip, onDeleted }: { clip: ListedClip; onDeleted: () 
   const [failed, setFailed] = useState<string | null>(null)
   /** 画像の取得が失敗した（実体が消えている）。削除の途中失敗で起きる（prd/02 §3.2）。 */
   const [imageMissing, setImageMissing] = useState(false)
+  /**
+   * 画像の原寸。**DB には持たず、読み込んだ `img` から取る**（prd/03 §2）。
+   *
+   * 「サムネイルを作らず**原寸を CSS で縮小**する」（§確定事項）ため、表示に使う画像は
+   * 常に原寸そのものである。**すでに手元にある寸法を、サーバーで解析し直して列に持つ理由がない。**
+   */
+  const [dimensions, setDimensions] = useState<Dimensions | null>(null)
 
   const broken = clip.kind === 'broken' || imageMissing
 
@@ -87,12 +96,26 @@ export function ClipCard({ clip, onDeleted }: { clip: ListedClip; onDeleted: () 
     <li className="card bg-base-100 shadow-sm">
       <div className="card-body gap-2 p-4">
         <div className="flex items-center justify-between gap-2">
-          <time className="text-base-content/50 text-xs">{formatTime(clip.createdAt)}</time>
-          <div className="flex items-center gap-1">
+          {/* 日時とサイズ。**操作との間の余白に規模を出す**（prd/03 §2）。 */}
+          <div className="flex min-w-0 items-center gap-2">
+            <time className="text-base-content/50 text-xs">{formatTime(clip.createdAt)}</time>
+            {!broken && <ClipSize clip={clip} dimensions={dimensions} />}
+          </div>
+
+          {/* 操作。**狭い幅ではアイコンだけにする**（prd/03 §5）。
+              `aria-label` を必ず付ける。付けないと、文字を隠した時点で読み上げが名前を失う。 */}
+          <div className="flex shrink-0 items-center gap-1">
             {copied && <span className="badge badge-success badge-sm">コピーしました</span>}
             {clip.kind === 'image' && !broken && (
-              <button type="button" className="btn btn-ghost btn-xs" onClick={download}>
-                ダウンロード
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={download}
+                aria-label="ダウンロード"
+                title="ダウンロード"
+              >
+                <ArrowDownTrayIcon className="size-4 sm:hidden" />
+                <span className="hidden sm:inline">ダウンロード</span>
               </button>
             )}
             <button
@@ -100,8 +123,11 @@ export function ClipCard({ clip, onDeleted }: { clip: ListedClip; onDeleted: () 
               className="btn btn-ghost btn-xs text-error"
               onClick={remove}
               disabled={deleting}
+              aria-label="削除"
+              title="削除"
             >
-              削除
+              <TrashIcon className="size-4 sm:hidden" />
+              <span className="hidden sm:inline">削除</span>
             </button>
           </div>
         </div>
@@ -133,6 +159,13 @@ export function ClipCard({ clip, onDeleted }: { clip: ListedClip; onDeleted: () 
                 src={`/api/clips/${clip.id}/blob`}
                 alt=""
                 onError={() => setImageMissing(true)}
+                // 原寸はここでしか分からない（`ClipSize` へ渡す）。
+                onLoad={(event) =>
+                  setDimensions({
+                    width: event.currentTarget.naturalWidth,
+                    height: event.currentTarget.naturalHeight,
+                  })
+                }
                 className="max-h-96 max-w-full rounded object-contain"
               />
             )}
