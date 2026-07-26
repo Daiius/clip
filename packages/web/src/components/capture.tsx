@@ -283,10 +283,17 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
           </button>
         </div>
 
+        {/* **`accept` を付けない**（§1.2）。他の経路と同じく、申告 MIME で事前に遮断しない。
+            デスクトップの `accept` は「候補を絞るが選べなくはしない」誘導に留まるが、
+            **iOS のファイルピッカーは条件に合わないものをグレーアウトし、
+            「すべてのファイル」へ切り替える逃げ道が無い**。OS が正しい画像の MIME を
+            空文字や `application/octet-stream` と申告した場合、**そもそも選べなくなる** —
+            iPhone は主要端末（§1.3）であり、利用者が回避できない誤判定になる。
+            `image/*` へ広げても申告依存は変わらないので、外す方を採る。
+            対象外なら送信後に 415 が返り、§1.4 の文言が出る。 */}
         <input
           ref={fileInput}
           type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp"
           className="hidden"
           onChange={(event) => {
             const file = event.target.files?.[0]
