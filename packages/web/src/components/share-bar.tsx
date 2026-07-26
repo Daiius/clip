@@ -5,12 +5,14 @@ import { createShare, revokeShare, type Share } from '../clips.ts'
 /**
  * 自動コピー（prd/03 §6）。
  *
- * ⚠ **`await` を挟んだ後の `clipboard.writeText()` は Safari が拒否する。**
- * 書き込みがユーザー操作と**同期的に結び付いていること**を要求するため、発行の応答を
- * 待ってから書くと、その時点でジェスチャーの資格を失っている。
- * **`ClipboardItem` に Promise を渡せば、書き込み自体は操作の中で始まり中身だけ後から解決する。**
+ * ⚠ **`await` を挟んだ後の書き込みは、Safari では通るとは限らない。** 書き込みがユーザー操作と
+ * 結び付いていることを要求するため、発行の応答を待ってから書くと**ジェスチャーの資格を失いうる**。
+ * **`ClipboardItem` に Promise を渡せば、書き込み自体は操作の中で始まり中身だけ後から解決する**——
+ * **確実に通る側を選んでいる**（`await` を挟む形が必ず失敗するわけではない。
+ * 画像のコピー（`clip-card.tsx`）は実体を取得してから書いており、iPhone の実機で通っている）。
  *
  * 失敗しても画面にリンクを出すので、**ここは補助であって唯一の経路ではない**。
+ * 端末とブラウザの版に依存する挙動なので、**成否に関わらず手で取れる状態を保つ**方が確実である。
  */
 function copyWhenReady(pending: Promise<Share>): Promise<boolean> {
   if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
