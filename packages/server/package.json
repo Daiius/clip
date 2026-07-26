@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Hono(RPC) API・DB スキーマ・BlobStore・認証。",
   "exports": {
-    "./app": "./src/app.ts"
+    "./app": "./src/app.ts",
+    "./limits": "./src/limits.ts"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

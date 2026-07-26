@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { CaptureError, createImageClip, createTextClip } from '../clips.ts'
+import { MAX_IMAGE_BYTES } from 'server/limits'
+import { CaptureError, createImageClip, createTextClip, IMAGE_TOO_LARGE_MESSAGE } from '../clips.ts'
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
 
@@ -100,14 +101,45 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
   const nextFailureId = useRef(0)
   const fileInput = useRef<HTMLInputElement>(null)
 
+  /** 失敗を記録する。再試行なら文言だけ差し替え、そうでなければ1件足す。 */
+  const recordFailure = (payload: Payload, retryOf: number | undefined, message: string) => {
+    if (retryOf !== undefined) {
+      // 再試行がまた失敗した場合。同じ内容を二重に並べない。
+      setFailures((failures) =>
+        failures.map((failure) => {
+          if (failure.id !== retryOf) return failure
+          return { ...failure, message }
+        }),
+      )
+      return
+    }
+    const id = nextFailureId.current++
+    setFailures((failures) => [...failures, { id, payload, message }])
+  }
+
   /**
    * 保存する。`retryOf` があれば、その失敗の再試行として扱う。
    *
    * **複数が同時に走りうる**ので、成否はどれも「自分の1件」にしか触らない。
    */
   const run = async (payload: Payload, retryOf?: number) => {
-    setInFlight((count) => count + 1)
     setError(null)
+
+    // **送る前に大きさで弾く**（prd/03 §1.4）。20MB 超をアップロードしきってから 413 で
+    // 捨てるのは、モバイル回線では待ち時間と通信量の両方が無駄になる。
+    //
+    // ⚠ 弾く根拠が **`File.size`（実測値）である**ことが重要。`File.type` は申告値なので
+    // 事前判定に使わない（正しい画像でも空や汎用値になり、利用者が回避できない誤判定に
+    // なる。§1.2 / `pickImageCandidate`）。**形式の判定はサーバーのシグネチャ検証のまま。**
+    //
+    // **`try` の外でやる。** 通信していないので進行中に数える必要がなく、そもそも
+    // **React Compiler は `try` 内の `throw` を扱えない**（prd/01 §1）。
+    if (payload.kind === 'image' && payload.file.size > MAX_IMAGE_BYTES) {
+      recordFailure(payload, retryOf, IMAGE_TOO_LARGE_MESSAGE)
+      return
+    }
+
+    setInFlight((count) => count + 1)
     try {
       // 三項演算子にしない。**React Compiler は try 内の value block を扱えない**
       // （条件式・論理演算・optional chaining。prd/01 §1）。
@@ -123,18 +155,7 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       onCaptured()
     } catch (cause) {
       const message = cause instanceof CaptureError ? cause.message : '保存に失敗しました'
-      if (retryOf !== undefined) {
-        // 再試行がまた失敗した場合。同じ内容を二重に並べず、理由だけ差し替える。
-        setFailures((failures) =>
-          failures.map((failure) => {
-            if (failure.id !== retryOf) return failure
-            return { ...failure, message }
-          }),
-        )
-      } else {
-        const id = nextFailureId.current++
-        setFailures((failures) => [...failures, { id, payload, message }])
-      }
+      recordFailure(payload, retryOf, message)
     }
     // `finally` を使わない（React Compiler が扱えない。prd/01 §1）。
     // カウンタを戻すだけなので、**全要求が終わって初めて busy が解除される**。

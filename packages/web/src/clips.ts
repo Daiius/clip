@@ -10,6 +10,14 @@ export type ListedClip = ClipListResponse['clips'][number]
 export class CaptureError extends Error {}
 
 /**
+ * 画像が上限を超えたときの文言（prd/03 §1.4）。
+ *
+ * **投入前のサイズ検査と、サーバーの 413 の両方から出す。** 同じ事情には同じ文言を出さないと、
+ * 「弾かれ方によって説明が変わる」ことになる。
+ */
+export const IMAGE_TOO_LARGE_MESSAGE = '画像が大きすぎます（20MB まで）'
+
+/**
  * 投入（prd/03 §1）。
  *
  * multipart を送るのでここだけ素の `fetch` を使う（RPC のフォーム型は File を含むと扱いづらい）。
@@ -37,7 +45,7 @@ async function postClip(form: FormData, kind: 'text' | 'image'): Promise<void> {
       body?.error === 'text too large' ? 'text' : body?.error === 'image too large' ? 'image' : kind
 
     throw new CaptureError(
-      tooLargeKind === 'text' ? 'テキストが大きすぎます' : '画像が大きすぎます（20MB まで）',
+      tooLargeKind === 'text' ? 'テキストが大きすぎます' : IMAGE_TOO_LARGE_MESSAGE,
     )
   }
   if (response.status === 401) {
