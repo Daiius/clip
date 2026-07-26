@@ -3,11 +3,48 @@ import { CaptureError, createImageClip, createTextClip } from '../clips.ts'
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
 
-/** allowlist 外を弾いたときの文言（prd/03 §1.4）。ペーストと D&D で同じものを出す。 */
-const UNSUPPORTED_MESSAGE = 'PNG / JPEG / GIF / WebP のみ扱えます'
-
 /** 貼られたもの。経路が違っても、保存に渡す時点ではこの2種類しかない（§1.1）。 */
 type Payload = { kind: 'text'; text: string } | { kind: 'image'; file: File }
+
+/**
+ * 落とされた・貼られたファイルから画像候補を1つ選ぶ（ペーストと D&D で同じ規則。§1.1）。
+ *
+ * **申告 MIME だけで弾かない。** `File.type` はクライアント申告値で、正しい PNG や JPEG でも
+ * 空文字や `application/octet-stream` になることがある。ここで allowlist に照合して落とすと、
+ * **正しい画像がサーバーのシグネチャ検証に到達しないまま拒否される**（prd/03 §1.2）。
+ *
+ * allowlist の判定は**サーバー1箇所に集約する**（prd/02 §4.1）。ここは「どれを送るか」だけを
+ * 決め、申告が allowlist に合うものを優先し、無ければ先頭を送って**サーバーに判定させる**。
+ * 本当に対象外（SVG・PDF・zip 等）なら 415 が返り、§1.4 の文言がそのまま画面に出る。
+ */
+function pickImageCandidate(files: readonly File[]): File | null {
+  return files.find((file) => IMAGE_TYPES.includes(file.type)) ?? files[0] ?? null
+}
+
+/**
+ * クリップボードの中身から投入するものを1つ決める。ペーストと同じく**画像が優先**（§1.1）。
+ *
+ * ⚠ **表現の取り出し（`getType` と text 変換）自体が失敗しうる。** 呼び出し側で必ず catch すること
+ * （握り潰すと click handler の Promise が reject したまま、画面には何も出ない）。
+ */
+async function extractPayload(items: ClipboardItems): Promise<Payload | null> {
+  for (const item of items) {
+    const imageType = item.types.find((type) => IMAGE_TYPES.includes(type))
+    if (imageType) {
+      const blob = await item.getType(imageType)
+      return { kind: 'image', file: new File([blob], 'pasted-image', { type: imageType }) }
+    }
+  }
+
+  for (const item of items) {
+    if (item.types.includes('text/plain')) {
+      const text = await (await item.getType('text/plain')).text()
+      if (text) return { kind: 'text', text }
+    }
+  }
+
+  return null
+}
 
 /**
  * 保存に失敗した投入1件。**投入ごとに独立して持つ。**
@@ -91,19 +128,12 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       const data = event.clipboardData
       if (!data) return
 
-      // 画像が含まれていれば画像、無ければテキスト（人間に選ばせない。§1.1）。
-      const files = Array.from(data.files)
-      const image = files.find((file) => IMAGE_TYPES.includes(file.type))
+      // ファイルが含まれていれば画像、無ければテキスト（人間に選ばせない。§1.1）。
+      // 対象外の形式かどうかは**送ってサーバーに判定させる**（`pickImageCandidate` 参照）。
+      const image = pickImageCandidate(Array.from(data.files))
       if (image) {
         event.preventDefault()
         void run({ kind: 'image', file: image })
-        return
-      }
-
-      // ファイルはあるが allowlist 外（SVG・PDF・zip 等）。**黙って無反応にしない**（§1.4）。
-      if (files.length > 0) {
-        event.preventDefault()
-        setError(UNSUPPORTED_MESSAGE)
         return
       }
 
@@ -127,11 +157,16 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
     }
 
     // **読み取りは run の外で試す。** 失敗時に busy のままだと、案内先のボタンごと押せなくなる。
-    let items: ClipboardItems
+    //
+    // **取り出し（`extractPayload`）まで含めて囲む。** `read()` だけを囲むと、その後の
+    // `getType()` や text 変換が失敗したときに Promise が reject したままになり、
+    // 理由も代替経路の案内も出ない（§1.3）。
+    let payload: Payload | null
     try {
-      items = await navigator.clipboard.read()
+      const items = await navigator.clipboard.read()
+      payload = await extractPayload(items)
     } catch {
-      // 権限拒否・読み取り不可。
+      // 権限拒否・読み取り不可・表現の取り出し失敗。
       //
       // ⚠ **ここで file input を click() しても開かない。** 権限 UI を経た後の catch では
       // クリック由来の transient user activation が切れており、iOS Safari はファイル選択を
@@ -139,30 +174,6 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
       // **利用者の次のタップに委ねる**（§1.3）。
       setError('クリップボードを読めませんでした。「画像を選ぶ」からお試しください')
       return
-    }
-
-    // 貼るものを決める。ペーストと同じく**画像が優先**（§1.1）。
-    let payload: Payload | null = null
-
-    for (const item of items) {
-      const imageType = item.types.find((type) => IMAGE_TYPES.includes(type))
-      if (imageType) {
-        const blob = await item.getType(imageType)
-        payload = { kind: 'image', file: new File([blob], 'pasted-image', { type: imageType }) }
-        break
-      }
-    }
-
-    if (!payload) {
-      for (const item of items) {
-        if (item.types.includes('text/plain')) {
-          const text = await (await item.getType('text/plain')).text()
-          if (text) {
-            payload = { kind: 'text', text }
-            break
-          }
-        }
-      }
     }
 
     if (!payload) {
@@ -177,10 +188,8 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
     event.preventDefault()
     setDragging(false)
 
-    // 判別はペーストと同じ規則。**画像が含まれていれば画像、無ければテキスト**（§1.1）。
-    const image = Array.from(event.dataTransfer.files).find((file) =>
-      IMAGE_TYPES.includes(file.type),
-    )
+    // 判別はペーストと同じ規則。**ファイルが含まれていれば画像、無ければテキスト**（§1.1）。
+    const image = pickImageCandidate(Array.from(event.dataTransfer.files))
     if (image) {
       void run({ kind: 'image', file: image })
       return
@@ -190,12 +199,6 @@ export function Capture({ onCaptured }: { onCaptured: () => void }) {
     const text = event.dataTransfer.getData('text/plain')
     if (text) {
       void run({ kind: 'text', text })
-      return
-    }
-
-    // 画像でもテキストでもないファイル（任意ファイルは対象外。§1.4）。
-    if (event.dataTransfer.files.length > 0) {
-      setError(UNSUPPORTED_MESSAGE)
     }
   }
 
