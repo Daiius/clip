@@ -132,7 +132,7 @@ pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB �
 - **dev では Vite の proxy が `changeOrigin: true` で Host を書き換える。** server が見るのは
   利用者のオリジンではなく転送先（`server:4000`）であり、そこから組んだ URL は
   **ホストに公開していない server を指す**（§3 の表）。ブラウザからも受け手からも届かない。
-- **remote では正しいスキームが得られない。** tunnel は平文でコンテナへ繋ぐので server が見るのは
+- **remote では正しいスキームが得られない。** 前段は平文でコンテナへ繋ぐので server が見るのは
   `http` であり、`https` を組むには `X-Forwarded-Proto` を信じる必要がある。
   [04](./04-auth-and-privacy.md) §1 が**前段を前提にしない**と宣言している以上、
   前段のヘッダ設定に正しさを預けない。
