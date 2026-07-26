@@ -3,6 +3,7 @@ import { api } from '../api.ts'
 import { type ListedClip, listClips } from '../clips.ts'
 import { Capture } from '../components/capture.tsx'
 import { ClipList } from '../components/clip-list.tsx'
+import { ShareBar } from '../components/share-bar.tsx'
 
 /**
  * 投入口と一覧（prd/03）。貼ったものがそのまま下に増えていく。
@@ -23,6 +24,13 @@ export function HomePage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
   const [loggingOut, setLoggingOut] = useState(false)
+  /**
+   * 共有する対象の選択（prd/03 §6）。**一覧の並びで順序を決める**ので、集合だけを持つ。
+   *
+   * ⚠ **`Set` を書き換えず、毎回作り直す。** 同一参照のまま中身を変えると、React が
+   * 変化に気づかない（メモ化は React Compiler に委ねている。prd/01 §1）。
+   */
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set())
 
   /**
    * 取得の世代。**`reload` が走ったら、進行中の「もっと見る」の結果を捨てる**ための番号。
@@ -91,6 +99,26 @@ export function HomePage() {
     setLoadingMore(false)
   }
 
+  const setSelected = (id: string, selected: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (selected) {
+        next.add(id)
+      } else {
+        next.delete(id)
+      }
+      return next
+    })
+  }
+
+  /**
+   * 一覧の並びのまま、選択されているものだけを返す。
+   *
+   * **選択した順ではなく一覧の順にする。** 受け手に渡るマニフェストの行順が
+   * 「新しい順」（prd/03 §2）と一致していた方が、画面と突き合わせやすい。
+   */
+  const selectedInOrder = clips.filter((clip) => selectedIds.has(clip.id)).map((clip) => clip.id)
+
   const logout = async () => {
     setLoggingOut(true)
     try {
@@ -137,12 +165,16 @@ export function HomePage() {
         ) : (
           <ClipList
             clips={clips}
+            selectedIds={selectedIds}
+            onSelectedChange={setSelected}
             hasMore={next !== null}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
             onChanged={reload}
           />
         )}
+
+        <ShareBar selectedIds={selectedInOrder} onClear={() => setSelectedIds(new Set())} />
       </div>
     </main>
   )

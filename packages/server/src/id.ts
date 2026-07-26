@@ -15,3 +15,14 @@ const nextUlid = monotonicFactory()
 export function newClipId(): string {
   return nextUlid()
 }
+
+/**
+ * 共有の ID（prd/02 §6）。**同じ生成器を使う**（別テーブルなので値が混ざっても問題なく、
+ * 単調性の保証を1箇所に保てる）。
+ *
+ * ⚠ **これも認可トークンではない。** 共有を開けるのは `shares.tokenHash` に対応する乱数だけで、
+ * この `id` は**失効の宛先**にしか使わない（prd/04 §3.1）。
+ */
+export function newShareId(): string {
+  return nextUlid()
+}

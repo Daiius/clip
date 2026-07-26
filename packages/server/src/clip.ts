@@ -20,6 +20,20 @@ export const IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/
 export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number]
 
 /**
+ * ダウンロード名と共有のメンバー URL に付ける拡張子。
+ *
+ * **1箇所に置く。** ダウンロード（prd/03 §3）と共有（§6）で別々に持つと、
+ * 形式を足したときに片方だけ古くなる。導出元は常に**サーバーが判定した `mimeType`** であり、
+ * クライアントの申告値ではない（prd/02 §4.1）。
+ */
+export const IMAGE_EXTENSIONS: Record<ImageMimeType, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+}
+
+/**
  * ファイル名を DB 列（`varchar(255)`）に収まる長さへ丸める。
  *
  * **`String.prototype.slice` を使わない。** slice は UTF-16 コード単位で数えるため、

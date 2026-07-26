@@ -76,3 +76,23 @@ export async function deleteClip(id: string): Promise<void> {
   const response = await api.clips[':id'].$delete({ param: { id } })
   if (!response.ok) throw new Error('削除できませんでした')
 }
+
+/** 発行された共有（prd/03 §6）。`url` は**このとき一度しか受け取れない**（prd/02 §6）。 */
+export type Share = { id: string; url: string; expiresAt: string }
+
+export async function createShare(clipIds: string[]): Promise<Share> {
+  const response = await api.shares.$post({ json: { clipIds } })
+
+  if (response.status === 409) {
+    // 選択画面と DB がずれている（渡そうとしたものが既に消えている）。
+    throw new Error('選んだもののうち、すでに消えているものがあります。読み直してください')
+  }
+  if (response.status !== 201) throw new Error('共有リンクを作れませんでした')
+
+  return response.json()
+}
+
+export async function revokeShare(id: string): Promise<void> {
+  const response = await api.shares[':id'].$delete({ param: { id } })
+  if (!response.ok) throw new Error('失効させられませんでした')
+}

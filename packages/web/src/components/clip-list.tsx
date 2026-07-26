@@ -7,12 +7,16 @@ import { ClipCard } from './clip-card.tsx'
  */
 export function ClipList({
   clips,
+  selectedIds,
+  onSelectedChange,
   hasMore,
   loadingMore,
   onLoadMore,
   onChanged,
 }: {
   clips: ListedClip[]
+  selectedIds: ReadonlySet<string>
+  onSelectedChange: (id: string, selected: boolean) => void
   hasMore: boolean
   loadingMore: boolean
   onLoadMore: () => void
@@ -30,7 +34,13 @@ export function ClipList({
     <>
       <ul className="flex list-none flex-col gap-3">
         {clips.map((clip) => (
-          <ClipCard key={clip.id} clip={clip} onDeleted={onChanged} />
+          <ClipCard
+            key={clip.id}
+            clip={clip}
+            selected={selectedIds.has(clip.id)}
+            onSelectedChange={(selected) => onSelectedChange(clip.id, selected)}
+            onDeleted={onChanged}
+          />
         ))}
       </ul>
 
