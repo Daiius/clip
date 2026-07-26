@@ -1,8 +1,9 @@
 import { zValidator } from '@hono/zod-validator'
-import { desc, eq, lt } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, lt } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { logger } from 'hono/logger'
+import type { MiddlewareHandler } from 'hono/types'
 import { z } from 'zod'
 import {
   hasValidSession,
@@ -11,9 +12,10 @@ import {
   sessionRequired,
   verifyCredentials,
 } from './auth.ts'
-import { type BlobStore, blobKeyFor, createS3BlobStore } from './blob-store.ts'
+import { BlobNotFoundError, type BlobStore, blobKeyFor, createS3BlobStore } from './blob-store.ts'
 import {
-  type ImageMimeType,
+  type Clip,
+  IMAGE_EXTENSIONS,
   MAX_IMAGE_BYTES,
   MAX_TEXT_BYTES,
   toClip,
@@ -22,9 +24,21 @@ import {
 } from './clip.ts'
 import { attachmentDisposition } from './content-disposition.ts'
 import { db } from './db/index.ts'
-import { clips } from './db/schema.ts'
-import { newClipId } from './id.ts'
+import { clips, shares } from './db/schema.ts'
+import { newClipId, newShareId } from './id.ts'
 import { detectImageMime } from './image.ts'
+import { SHARE_TTL_MS } from './limits.ts'
+import { publicOrigin } from './origin.ts'
+import {
+  buildManifest,
+  createShareSchema,
+  hashShareToken,
+  memberFileName,
+  newShareToken,
+  parseMemberId,
+  shareRowSchema,
+  type ValidShare,
+} from './share.ts'
 
 /**
  * ログイン要求の上限（prd/04 §2）。**未認証で叩ける口なので、単一リクエストの資源上限を持つ。**
@@ -60,11 +74,27 @@ const loginSchema = z.object({
   password: z.string().max(1024),
 })
 
-const EXTENSIONS: Record<ImageMimeType, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
+/** 現存する clip だけを、渡された順で引く。**共有の参照は毎回ここを通る**（prd/02 §6）。 */
+async function findClipsInOrder(ids: string[]): Promise<Clip[]> {
+  if (ids.length === 0) return []
+  const rows = await db.select().from(clips).where(inArray(clips.id, ids))
+
+  // **壊れた行は落とす。** 共有の受け手には削除を促す導線が無いので、
+  // 一覧（prd/02 §3.2）のように「壊れています」と見せる相手がいない。
+  const byId = new Map<string, Clip>()
+  for (const row of rows) {
+    try {
+      byId.set(row.id, toClip(row))
+    } catch {
+      console.error(`共有: 壊れた行を除外しました id=${row.id}`)
+    }
+  }
+
+  // 消えた clip は自然に落ちる（JSON 列に外部キーは張れないが、それが望む挙動。prd/02 §6）。
+  return ids.flatMap((id) => {
+    const clip = byId.get(id)
+    return clip ? [clip] : []
+  })
 }
 
 /**
@@ -252,6 +282,56 @@ export const routes = new Hono()
     return serveBlob(c.req.param('id'), true)
   })
 
+  /**
+   * 共有の発行（prd/04 §3.1）。**選んだ clip だけを指す capability URL を作る。**
+   *
+   * 平文のトークンは**ここで一度だけ返す**。DB にはハッシュしか置かないので、
+   * 後から同じ URL を組み立て直すことはできない（prd/02 §6）。
+   */
+  .post('/shares', sessionRequired, zValidator('json', createShareSchema), async (c) => {
+    const { clipIds } = c.req.valid('json')
+
+    // **存在しない ID を含んだまま発行しない。** 発行直後から欠けたマニフェストになり、
+    // 「選んだのに渡っていない」が起きる。選択画面と DB がずれているので、やり直させる。
+    const found = await findClipsInOrder(clipIds)
+    if (found.length !== clipIds.length) {
+      return c.json({ error: 'clip not found' } as const, 409)
+    }
+
+    // 期限切れの掃除はここで行う（cron を持ち込む規模ではない。prd/02 §6）。
+    const now = new Date()
+    await db.delete(shares).where(lt(shares.expiresAt, now))
+
+    const token = newShareToken()
+    const id = newShareId()
+    const expiresAt = new Date(now.getTime() + SHARE_TTL_MS)
+
+    await db.insert(shares).values({
+      id,
+      tokenHash: hashShareToken(token),
+      clipIds,
+      expiresAt,
+      createdAt: now,
+    })
+
+    return c.json(
+      { id, url: `${publicOrigin()}/s/${token}`, expiresAt: expiresAt.toISOString() } as const,
+      201,
+    )
+  })
+
+  /**
+   * 失効（prd/04 §3.1）。**宛先は `id`** で、生のトークンを再送させない。
+   *
+   * `revokedAt` は持たず行を消す。10 分で消える行に履歴を残す意味がない（prd/02 §6）。
+   */
+  .delete('/shares/:id', sessionRequired, async (c) => {
+    await db.delete(shares).where(eq(shares.id, c.req.param('id')))
+    // 消えていれば目的は達している。**存在しなかった場合も 404 にしない**
+    // （失効させたいだけなので、既に無いことは失敗ではない）。
+    return c.json({ ok: true } as const)
+  })
+
 async function serveBlob(id: string, asAttachment: boolean): Promise<Response> {
   const rows = await db.select().from(clips).where(eq(clips.id, id)).limit(1)
   const row = rows[0]
@@ -271,7 +351,7 @@ async function serveBlob(id: string, asAttachment: boolean): Promise<Response> {
   })
 
   if (asAttachment) {
-    const name = clip.fileName ?? `clip-${clip.id}.${EXTENSIONS[clip.mimeType]}`
+    const name = clip.fileName ?? `clip-${clip.id}.${IMAGE_EXTENSIONS[clip.mimeType]}`
     // RFC 5987 の拡張値として符号化する。改行や `"` はもちろん、`'` `(` `)` `*` も
     // percent-encode されるのでヘッダを壊せない（content-disposition.ts）。
     headers.set('Content-Disposition', attachmentDisposition(name))
@@ -280,11 +360,146 @@ async function serveBlob(id: string, asAttachment: boolean): Promise<Response> {
   return new Response(body, { headers })
 }
 
-// 同一オリジン配信のため、API は origin 直下の `/api` に置く（prd/01 §5）。
-// dev では web(Vite) の proxy が `/api` をパスを保持したまま転送してくる。
-export const app = new Hono().basePath('/api')
+/**
+ * 共有経路（prd/04 §3.1）。**ルート保護の唯一の例外**で、セッションを要求しない。
+ *
+ * ⚠ **`/api` の外に分けてある。** `/api/clips/:id/blob` に共有トークンも受け付ける形にすると、
+ * 認証必須のはずのパスに無認証の抜け道が生え、**パスを見ただけでは保護の有無が判断できなくなる**。
+ * 前段プロキシを使う配置でも、素通しにするのはこの1本だけで済む。
+ */
+export const shareRoutes = new Hono()
+  /** マニフェスト。**改行区切りのメンバー URL だけ**を返す（prd/03 §6）。 */
+  .get('/:token', async (c) => {
+    const found = await findShare(c.req.param('token'))
+    if (!found) return notFound()
 
-app.use('*', logger())
-app.route('/', routes)
+    const clips = await findClipsInOrder(found.clipIds)
+    return new Response(buildManifest(publicOrigin(), c.req.param('token'), clips), {
+      // **マニフェストにも `attachment` を付ける**（prd/04 §3.1）。無認証・同一オリジンで
+      // inline 表示させないという条件は、実体だけでなくこの経路にも掛かる。
+      headers: sharedHeaders('text/plain; charset=utf-8', 'clip-share.txt'),
+    })
+  })
+
+  /** 実体。テキストも画像も同じ口から返す。 */
+  .get('/:token/:file', async (c) => {
+    const found = await findShare(c.req.param('token'))
+    if (!found) return notFound()
+
+    const file = c.req.param('file')
+    const id = parseMemberId(file)
+    // **このトークンが指していない clip には届かない**（prd/04 §3.1）。
+    if (!id || !found.clipIds.includes(id)) return notFound()
+
+    const [clip] = await findClipsInOrder([id])
+    if (!clip) return notFound()
+
+    // **正規の名前と完全に一致しない要求は受け付けない。** 拡張子違いでも同じ実体が取れると、
+    // 同じものを指す URL が何通りにもなる。capability URL 自体が鍵なので指し方は1通りに保つ。
+    if (file !== memberFileName(clip)) return notFound()
+
+    if (clip.kind === 'text') {
+      // **`text/plain` に固定する。** 無認証かつ同一オリジンなので、HTML を貼った clip を
+      // HTML として返すと stored XSS になる（prd/02 §4.1 が SVG を外したのと同じ理由）。
+      return new Response(clip.text, {
+        headers: sharedHeaders('text/plain; charset=utf-8', memberFileName(clip)),
+      })
+    }
+
+    // **実体が無いのは起こりうる正常系**（削除の途中失敗。prd/02 §3.2）。
+    // 一覧は「壊れています」と見せて削除を促せるが、共有の受け手にその導線は無い。
+    // **他の 404 と同じ応答に畳む**（理由を区別しないという境界を保つ。prd/04 §3.1）。
+    // ⚠ ストレージ障害はここで畳まない。500 のままにして、異常を異常として出す。
+    const blob = await getBlobStore()
+      .get(clip.blobKey)
+      .catch((error: unknown) => {
+        if (error instanceof BlobNotFoundError) return null
+        throw error
+      })
+    if (!blob) return notFound()
+
+    const headers = sharedHeaders(clip.mimeType, memberFileName(clip))
+    headers.set('Content-Length', String(clip.byteSize))
+    return new Response(blob.body, { headers })
+  })
+
+/** 有効な共有だけを返す。**期限切れは存在しないものとして扱う**（prd/04 §3.1）。 */
+async function findShare(token: string): Promise<ValidShare | undefined> {
+  const rows = await db
+    .select()
+    .from(shares)
+    .where(and(eq(shares.tokenHash, hashShareToken(token)), gt(shares.expiresAt, new Date())))
+    .limit(1)
+
+  const row = rows[0]
+  if (!row) return undefined
+
+  // **JSON 列の中身を実行時に確かめる**（prd/02 §6）。Drizzle の `$type<string[]>()` は
+  // 静的な注釈にすぎず、壊れた行を素通しする。信じると `includes` などで例外になり、
+  // **無認証の経路が 500 を返して**「理由を区別しない 404」という境界が崩れる。
+  const parsed = shareRowSchema.safeParse(row)
+  if (!parsed.success) {
+    // **トークンは書かない**（prd/04 §3.1）。id だけで行は特定できる。
+    console.error(`shares の行が壊れています (id=${row.id})`)
+    return undefined
+  }
+  return parsed.data
+}
+
+/**
+ * 見つからない場合の応答。**理由を区別しない。**
+ *
+ * 「トークンが無い」「期限切れ」「そのセットに含まれていない」を撃ち分けると、
+ * **当たりのトークンかどうかを応答から判別できてしまう**。
+ */
+function notFound(): Response {
+  return new Response(null, { status: 404, headers: { 'Cache-Control': 'no-store' } })
+}
+
+function sharedHeaders(contentType: string, fileName?: string): Headers {
+  const headers = new Headers({
+    'Content-Type': contentType,
+    // ブラウザの MIME 推測で別形式として解釈される余地を残さない（prd/02 §4.2）。
+    'X-Content-Type-Options': 'nosniff',
+    /**
+     * **`no-store` は失効の一部である**（prd/04 §3.1）。
+     *
+     * 一度成功した応答がキャッシュに残ると、サーバーに問い合わせずに返される。その状態では
+     * **期限を過ぎても行を消しても、同じ URL から中身が取り出せてしまう**。
+     * `/api/*` と違い、この経路には cookie という再検証の機会が無い。
+     * ⚠ `no-cache` では足りない（保存自体は許すため）。
+     */
+    'Cache-Control': 'no-store',
+  })
+  // ブラウザでの inline 描画を消す。**受け手（curl）の挙動は変わらない**（prd/04 §3.1）。
+  if (fileName) headers.set('Content-Disposition', attachmentDisposition(fileName))
+  return headers
+}
+
+/**
+ * `/s/*` 用のロガー。**トークンを伏せる**（prd/04 §3.1）。
+ *
+ * トークンは URL のパスに載るので、素の `logger()` を当てると**標準出力に平文で残る**。
+ * それは **DB にハッシュしか置かない防御を、ログ側から迂回できる**ということである。
+ * 残す価値があるのは経路・成否・所要時間であって、トークンそのものではない。
+ */
+const shareLogger: MiddlewareHandler = async (c, next) => {
+  const started = Date.now()
+  await next()
+  const shape = c.req.path.split('/').length > 3 ? '/s/<token>/<file>' : '/s/<token>'
+  console.log(`  <-- ${c.req.method} ${shape}`)
+  console.log(`  --> ${c.req.method} ${shape} ${c.res.status} ${Date.now() - started}ms`)
+}
+
+// 同一オリジン配信（prd/01 §5）。API は origin 直下の `/api`、共有は `/s` に置く。
+// dev では web(Vite) の proxy が**どちらもパスを保持したまま**転送してくる（prd/01 §3）。
+export const app = new Hono()
+
+app.use('/api/*', logger())
+// **`/s/*` に素の logger を当てない。** パスにトークンが載っている。
+app.use('/s/*', shareLogger)
+
+app.route('/api', routes)
+app.route('/s', shareRoutes)
 
 export type AppType = typeof routes

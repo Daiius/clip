@@ -7,16 +7,24 @@ import { ClipCard } from './clip-card.tsx'
  */
 export function ClipList({
   clips,
+  selectedIds,
+  selectAtLimit,
+  onSelectedChange,
   hasMore,
   loadingMore,
   onLoadMore,
-  onChanged,
+  onDeleted,
 }: {
   clips: ListedClip[]
+  selectedIds: ReadonlySet<string>
+  /** 選択が上限に達している（prd/03 §6）。未選択のチェックボックスを押せなくする。 */
+  selectAtLimit: boolean
+  onSelectedChange: (id: string, selected: boolean) => void
   hasMore: boolean
   loadingMore: boolean
   onLoadMore: () => void
-  onChanged: () => void
+  /** 削除された。**id を渡す**ので、呼び出し側は選択からも外せる（prd/03 §6）。 */
+  onDeleted: (id: string) => void
 }) {
   if (clips.length === 0) {
     return (
@@ -30,7 +38,14 @@ export function ClipList({
     <>
       <ul className="flex list-none flex-col gap-3">
         {clips.map((clip) => (
-          <ClipCard key={clip.id} clip={clip} onDeleted={onChanged} />
+          <ClipCard
+            key={clip.id}
+            clip={clip}
+            selected={selectedIds.has(clip.id)}
+            selectDisabled={selectAtLimit}
+            onSelectedChange={(selected) => onSelectedChange(clip.id, selected)}
+            onDeleted={() => onDeleted(clip.id)}
+          />
         ))}
       </ul>
 

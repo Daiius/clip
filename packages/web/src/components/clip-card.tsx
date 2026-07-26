@@ -37,7 +37,20 @@ async function copyImage(id: string): Promise<boolean> {
   }
 }
 
-export function ClipCard({ clip, onDeleted }: { clip: ListedClip; onDeleted: () => void }) {
+export function ClipCard({
+  clip,
+  selected,
+  selectDisabled,
+  onSelectedChange,
+  onDeleted,
+}: {
+  clip: ListedClip
+  selected: boolean
+  /** 上限に達していて、**これ以上増やせない**（prd/03 §6）。選択済みのものは常に外せる。 */
+  selectDisabled: boolean
+  onSelectedChange: (selected: boolean) => void
+  onDeleted: () => void
+}) {
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -96,8 +109,32 @@ export function ClipCard({ clip, onDeleted }: { clip: ListedClip; onDeleted: () 
     <li className="card bg-base-100 shadow-sm">
       <div className="card-body gap-2 p-4">
         <div className="flex items-center justify-between gap-2">
-          {/* 日時とサイズ。**操作との間の余白に規模を出す**（prd/03 §2）。 */}
+          {/* 選択・日時・サイズ。**操作との間の余白に規模を出す**（prd/03 §2）。 */}
           <div className="flex min-w-0 items-center gap-2">
+            {/* 選択（prd/03 §6）。**モードにしない**ので常に出す。壊れた行には出さない
+                （渡せないものを選ばせない）。カード本体のタップ＝コピーとは別の場所に置く。 */}
+            {!broken && (
+              /*
+               * ⚠ **タップ領域を見た目より広く取る。** チェックボックスの見た目は小さいままで
+               * よいが、指で押す的が 16px しかないと iPhone で正確に押せない
+               * （Apple の HIG は最小 44pt を求めている）。
+               *
+               * `p-3` で四方に余白を足し、**同じ量の負のマージンで打ち消す**。
+               * こうすると**周りのレイアウトを 1px も動かさずに**的だけが広がる。
+               */
+              <label className="-m-3 flex cursor-pointer items-center p-3">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm"
+                  checked={selected}
+                  // 上限に達したら**未選択のものだけ**押せなくする。選択済みを外す道は塞がない
+                  // （塞ぐと、上限に達した時点で選び直せなくなる）。
+                  disabled={selectDisabled && !selected}
+                  onChange={(event) => onSelectedChange(event.currentTarget.checked)}
+                  aria-label="共有する対象に選ぶ"
+                />
+              </label>
+            )}
             <time className="text-base-content/50 text-xs">{formatTime(clip.createdAt)}</time>
             {!broken && <ClipSize clip={clip} dimensions={dimensions} />}
           </div>

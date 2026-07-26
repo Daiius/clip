@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { MAX_SHARE_CLIPS } from 'server/limits'
 import { api } from '../api.ts'
 import { type ListedClip, listClips } from '../clips.ts'
 import { Capture } from '../components/capture.tsx'
 import { ClipList } from '../components/clip-list.tsx'
+import { ShareBar } from '../components/share-bar.tsx'
 
 /**
  * 投入口と一覧（prd/03）。貼ったものがそのまま下に増えていく。
@@ -23,6 +25,15 @@ export function HomePage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
   const [loggingOut, setLoggingOut] = useState(false)
+  /**
+   * 共有する対象の選択（prd/03 §6）。**これが唯一の真実**で、表示中の一覧とは独立している。
+   *
+   * 順序は ULID から復元できるので（下記 `selectedInOrder`）、集合だけを持てば足りる。
+   *
+   * ⚠ **`Set` を書き換えず、毎回作り直す。** 同一参照のまま中身を変えると、React が
+   * 変化に気づかない（メモ化は React Compiler に委ねている。prd/01 §1）。
+   */
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set())
 
   /**
    * 取得の世代。**`reload` が走ったら、進行中の「もっと見る」の結果を捨てる**ための番号。
@@ -91,6 +102,47 @@ export function HomePage() {
     setLoadingMore(false)
   }
 
+  const setSelected = (id: string, selected: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (selected) {
+        next.add(id)
+      } else {
+        next.delete(id)
+      }
+      return next
+    })
+  }
+
+  /**
+   * 共有する対象を、一覧と同じ「新しい順」に並べる。
+   *
+   * ⚠ **表示中の `clips` で絞り込まない。** 投入や削除で `reload` が走ると一覧は先頭 50 件に
+   * 戻るが、選択は保たれる。絞り込むと、**「もっと見る」で選んだものがチェックされたまま
+   * 共有対象から黙って消える**（そして上限の枠だけは消費し続ける）。
+   * バーの件数と実際に渡すものが食い違うので、**`selectedIds` を唯一の真実にする**。
+   *
+   * 並びは **ULID の降順**で足りる。辞書順が生成時刻順なので、一覧の総順序
+   * （`id` の降順単独。prd/02 §2）と一致する——**表示中の配列を見に行く必要がない**。
+   */
+  const selectedInOrder = [...selectedIds].sort().reverse()
+
+  /**
+   * 削除されたものは選択から外す。
+   *
+   * 残すと、消えた clip を含んだまま発行して必ず 409 になる（`clips.ts`）。
+   * **ページ外に出ただけのもの（上記）とは違い、これは本当に渡せない。**
+   */
+  const handleDeleted = (id: string) => {
+    setSelectedIds((current) => {
+      if (!current.has(id)) return current
+      const next = new Set(current)
+      next.delete(id)
+      return next
+    })
+    void reload()
+  }
+
   const logout = async () => {
     setLoggingOut(true)
     try {
@@ -137,12 +189,21 @@ export function HomePage() {
         ) : (
           <ClipList
             clips={clips}
+            selectedIds={selectedIds}
+            selectAtLimit={selectedIds.size >= MAX_SHARE_CLIPS}
+            onSelectedChange={setSelected}
             hasMore={next !== null}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
-            onChanged={reload}
+            onDeleted={handleDeleted}
           />
         )}
+
+        <ShareBar
+          selectedIds={selectedInOrder}
+          atLimit={selectedIds.size >= MAX_SHARE_CLIPS}
+          onClear={() => setSelectedIds(new Set())}
+        />
       </div>
     </main>
   )
