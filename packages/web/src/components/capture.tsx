@@ -22,6 +22,25 @@ function pickImageCandidate(files: readonly File[]): File | null {
 }
 
 /**
+ * クリップボードの表現から画像候補の MIME を選ぶ（貼り付けボタン経由。§1.3）。
+ *
+ * **申告 MIME だけで弾かないのは `pickImageCandidate` と同じ理由**（§1.2）。allowlist に合う
+ * 表現を優先し、無ければ**テキスト以外の表現**を候補としてサーバーのシグネチャ検証に判定させる。
+ * ここで完全一致だけを見ると、`application/octet-stream` で申告された正しい画像が投入できず、
+ * SVG・PDF も 415 の所定の文言ではなく「貼れるものがありません」になってしまう。
+ *
+ * ⚠ **除くのは `text/plain` だけではなく `text/*` 全体。** リッチテキストのコピーは
+ * `text/html` と `text/plain` の組で来るため、`text/html` を画像候補にすると
+ * **普通の文字列のペーストが 415 で落ちる**（iPhone の主経路が壊れる）。
+ * Chrome の独自形式（`web ` 前置き）も同じ理由で除く。
+ */
+function pickClipboardImageType(types: readonly string[]): string | null {
+  const allowed = types.find((type) => IMAGE_TYPES.includes(type))
+  if (allowed) return allowed
+  return types.find((type) => !type.startsWith('text/') && !type.startsWith('web ')) ?? null
+}
+
+/**
  * クリップボードの中身から投入するものを1つ決める。ペーストと同じく**画像が優先**（§1.1）。
  *
  * ⚠ **表現の取り出し（`getType` と text 変換）自体が失敗しうる。** 呼び出し側で必ず catch すること
@@ -29,7 +48,7 @@ function pickImageCandidate(files: readonly File[]): File | null {
  */
 async function extractPayload(items: ClipboardItems): Promise<Payload | null> {
   for (const item of items) {
-    const imageType = item.types.find((type) => IMAGE_TYPES.includes(type))
+    const imageType = pickClipboardImageType(item.types)
     if (imageType) {
       const blob = await item.getType(imageType)
       return { kind: 'image', file: new File([blob], 'pasted-image', { type: imageType }) }
