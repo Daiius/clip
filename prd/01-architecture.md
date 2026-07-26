@@ -81,8 +81,10 @@ pnpm install
 pnpm init:env     # .env.*.example から .env.* を作る（既存ファイルは上書きしない）
 ```
 
-`init:env` が作るのは **example のダミー値のまま**である。認証を実装した後は
-`AUTH_PASSWORD` と `SESSION_SECRET` を自分の値に置き換えること（[04](./04-auth-and-privacy.md) §2）。
+`init:env` が作るのは **example のダミー値のまま**である。**起動する前に** `AUTH_PASSWORD`
+（32 文字以上のランダム文字列）と `SESSION_SECRET` を自分の値へ置き換えること
+（[04](./04-auth-and-privacy.md) §2）。**ダミー値は example として公開されており、認証は
+常に有効**なので、そのまま起動すると誰でもログインできる状態になる。
 
 ```bash
 pnpm dev          # docker compose up --build --watch で全サービス起動
