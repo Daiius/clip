@@ -4,5 +4,8 @@
     "lib": ["ES2023"],
     "types": ["node"]
   },
-  "include": ["src"]
+  // src だけでなく、package 直下の実行ファイル・設定ファイルも型検査の対象にする。
+  // build が型検査をしなくなった（esbuild でのバンドル出力に変わった）以上、
+  // ここから漏れたファイルの型エラーは検証チェーンを素通りし、実行時まで出てこない。
+  "include": ["src", "migrate.ts", "esbuild.config.ts", "drizzle.config.ts"]
 }
