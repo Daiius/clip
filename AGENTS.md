@@ -17,6 +17,7 @@
 ファイル選択）・一覧・プレビュー・コピー / ダウンロード・削除が動き、**remote dev 環境で
 手元の端末から実際に受け渡しができる**。
 **Phase 2 も完了。**[共有トークン](./prd/04-auth-and-privacy.md)で、LLM のセッションへ選んだものだけを期限付きリンクで渡せる。
+**Phase 3（本番配置）は設計のみ確定・未着手**（[prd/06](./prd/06-deployment.md)）。
 [`prd/`](./prd/) の各章は冒頭に「どこまで実装済みか」を書く。**実装を変えたら同じ PR で PRD も直すこと。**
 
 ## 技術スタック / 構成
@@ -46,6 +47,7 @@
 | [prd/03-ux.md](./prd/03-ux.md) | 投入口 / 一覧とプレビュー / 取り出し / 削除 / 端末ごとの経路 |
 | [prd/04-auth-and-privacy.md](./prd/04-auth-and-privacy.md) | 認証 / ルート保護 / 公開配置の前提 |
 | [prd/05-roadmap.md](./prd/05-roadmap.md) | フェーズ分け / 未実装・やらないこと / 確定事項 |
+| [prd/06-deployment.md](./prd/06-deployment.md) | 本番の配信の形 / 本番イメージ / マイグレーション / 前段が満たすべき条件 |
 
 > 仕様策定の経緯（grill ログ）: [`prd/_grilling/decisions.md`](./prd/_grilling/decisions.md)
 
