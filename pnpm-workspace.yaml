@@ -41,6 +41,10 @@ catalog:
   # デザインの意思決定コストを掛けないためのコンポーネント集（prd/01 §1）。
   daisyui: ^5.0.0
 
+  # --- 本番ビルド (server。prd/06 §3) ---
+  # 単一 ESM にバンドルして distroless で動かすため。実行環境は node_modules を持たない。
+  esbuild: ^0.28.0
+
   # --- テスト ---
   vitest: ^3.0.0
 

@@ -11,8 +11,10 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx migrate.ts",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit",
+    "build": "tsx esbuild.config.ts",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
@@ -28,6 +30,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "drizzle-kit": "catalog:",
+    "esbuild": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

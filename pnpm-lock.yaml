@@ -45,6 +45,9 @@ catalogs:
     drizzle-orm:
       specifier: 1.0.0-rc.3
       version: 1.0.0-rc.3
+    esbuild:
+      specifier: ^0.28.0
+      version: 0.28.1
     hono:
       specifier: ^4.12.15
       version: 4.12.31
@@ -123,6 +126,9 @@ importers:
       drizzle-kit:
         specifier: 'catalog:'
         version: 1.0.0-rc.3
+      esbuild:
+        specifier: 'catalog:'
+        version: 0.28.1
       tsx:
         specifier: 'catalog:'
         version: 4.23.1
