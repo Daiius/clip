@@ -203,7 +203,9 @@ export function ClipCard({
                     height: event.currentTarget.naturalHeight,
                   })
                 }
-                className="max-h-96 max-w-full rounded object-contain"
+                // カード幅に満たない画像は中央に置く（`mx-auto`）。左端に寄っていると
+                // 幅の違う画像が並んだときに揃わず、一覧が落ち着かない。
+                className="mx-auto max-h-96 max-w-full rounded object-contain"
               />
             )}
           </button>
