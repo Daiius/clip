@@ -102,6 +102,11 @@ pnpm format       # biome で整形
 pnpm db:push      # dev: スキーマを DB に強制同期（使い捨て DB 向け）
 ```
 
+**`pnpm build` は server では本番用のバンドルを出す**（[06](./06-deployment.md) §3）。
+型検査は `pnpm typecheck` の担当で、検証チェーン（`typecheck && test && check && build`）は
+両方を通る。**本番のマイグレーションを生成するのは `pnpm --filter server db:generate`**
+（適用はイメージ側。[06](./06-deployment.md) §4）。
+
 > **`pnpm db:push` は compose 内の `server` コンテナで `drizzle-kit push` を実行する。**
 > db をホストに公開していないため、ホストから直接は繋げない（§3 の表）。スタックが起動している
 > ことが前提になる。
