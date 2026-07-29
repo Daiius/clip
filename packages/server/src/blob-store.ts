@@ -2,6 +2,7 @@ import {
   CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3'
@@ -16,6 +17,17 @@ import {
 export interface BlobStore {
   put(key: string, body: Uint8Array, contentType: string): Promise<void>
   get(key: string): Promise<{ body: ReadableStream<Uint8Array>; contentLength?: number }>
+  /**
+   * 実体が在るかだけを確かめる（バイト列は取らない）。
+   *
+   * **条件付き GET の 304 のために要る**（prd/02 §4.2）。DB の行だけで 304 を返すと、
+   * 「S3 の削除は成功して DB 行の削除が失敗した」状態（prd/02 §3.2）を**キャッシュが覆い隠す**。
+   * 手元の古い画像が正常なものとして再利用され続け、**気づける異常を選んだ意味が無くなる**。
+   *
+   * ⚠ **「無い」と「確かめられない」を混ぜない。** 404 だけを `false` にし、
+   * それ以外の失敗はそのまま投げる（呼び出し側で 500 になる）。
+   */
+  exists(key: string): Promise<boolean>
   delete(key: string): Promise<void>
 }
 
@@ -131,6 +143,19 @@ export function createS3BlobStore(): BlobStore {
         body: result.Body.transformToWebStream() as ReadableStream<Uint8Array>,
         contentLength: result.ContentLength,
       }
+    },
+
+    async exists(key) {
+      await ensureBucket(bucket)
+
+      // HEAD なのでバイト列は流れない。**「無い」だけを false にし、障害はそのまま投げる。**
+      return await getClient()
+        .send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+        .then(() => true)
+        .catch((error: unknown) => {
+          if (isNotFound(error)) return false
+          throw error
+        })
     },
 
     async delete(key) {

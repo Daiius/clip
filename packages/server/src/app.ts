@@ -354,10 +354,17 @@ async function serveBlob(
    * 404 で落ちるので、**削除は今までどおり即座に反映される**。`no-cache` は
    * 「使う前に必ず訊きに来い」であって、「キャッシュを持つな」ではない（blob-cache.ts）。
    *
+   * ⚠ **行が在ることだけで 304 にしてはいけない。** 削除は「S3 の実体 → DB 行」の順なので、
+   * 途中で失敗すると**実体を失った行**が残る（prd/02 §3.2）。行だけを見て 304 を返すと、
+   * ブラウザは**手元の古い画像を正常なものとして再利用し続ける**。
+   * それは「気づける異常」としてこの順序を選んだ意味を、キャッシュの側から消してしまう。
+   * **バイト列は流さないまま、在ることだけを確かめる**（`exists`）。
+   *
    * 304 では本文を返さないので `Content-Type` / `Content-Length` も付けない。
    * 送るのはキャッシュを次も使わせるための ETag と `Cache-Control` だけ（RFC 9110 §15.4.5）。
    */
   if (matchesETag(ifNoneMatch, etag)) {
+    if (!(await getBlobStore().exists(clip.blobKey))) return new Response(null, { status: 404 })
     return new Response(null, { status: 304, headers: cacheHeaders(etag) })
   }
 
