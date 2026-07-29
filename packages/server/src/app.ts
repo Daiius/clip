@@ -12,6 +12,7 @@ import {
   sessionRequired,
   verifyCredentials,
 } from './auth.ts'
+import { BLOB_CACHE_CONTROL, blobETag, matchesETag } from './blob-cache.ts'
 import { BlobNotFoundError, type BlobStore, blobKeyFor, createS3BlobStore } from './blob-store.ts'
 import {
   type Clip,
@@ -274,12 +275,12 @@ export const routes = new Hono()
 
   /** 画像の配信（prd/02 §4.2）。**認証必須**（prd/04 §3）。 */
   .get('/clips/:id/blob', sessionRequired, async (c) => {
-    return serveBlob(c.req.param('id'), false)
+    return serveBlob(c.req.header('If-None-Match'), c.req.param('id'), false)
   })
 
   /** ダウンロード用の別経路（prd/03 §3）。中身は同じで `Content-Disposition` だけが違う。 */
   .get('/clips/:id/download', sessionRequired, async (c) => {
-    return serveBlob(c.req.param('id'), true)
+    return serveBlob(c.req.header('If-None-Match'), c.req.param('id'), true)
   })
 
   /**
@@ -332,7 +333,11 @@ export const routes = new Hono()
     return c.json({ ok: true } as const)
   })
 
-async function serveBlob(id: string, asAttachment: boolean): Promise<Response> {
+async function serveBlob(
+  ifNoneMatch: string | undefined,
+  id: string,
+  asAttachment: boolean,
+): Promise<Response> {
   const rows = await db.select().from(clips).where(eq(clips.id, id)).limit(1)
   const row = rows[0]
   if (!row) return new Response(null, { status: 404 })
@@ -340,15 +345,40 @@ async function serveBlob(id: string, asAttachment: boolean): Promise<Response> {
   const clip = toClip(row)
   if (clip.kind !== 'image') return new Response(null, { status: 404 })
 
-  const { body } = await getBlobStore().get(clip.blobKey)
+  const etag = blobETag(clip)
 
-  const headers = new Headers({
-    // **保存時にサーバーが判定した MIME**を使う（クライアント申告ではない。prd/02 §4.2）。
-    'Content-Type': clip.mimeType,
-    'Content-Length': String(clip.byteSize),
-    // allowlist を通っていても、ブラウザの MIME 推測で別形式として解釈される余地を残さない。
-    'X-Content-Type-Options': 'nosniff',
-  })
+  /**
+   * **手元にあるものがまだ有効なら、バイト列を送らない**（prd/02 §4.2）。
+   *
+   * ⚠ **この判定を DB を引いた後に置くことに意味がある。** 消えた clip はここへ来る前に
+   * 404 で落ちるので、**削除は今までどおり即座に反映される**。`no-cache` は
+   * 「使う前に必ず訊きに来い」であって、「キャッシュを持つな」ではない（blob-cache.ts）。
+   *
+   * 304 では本文を返さないので `Content-Type` / `Content-Length` も付けない。
+   * 送るのはキャッシュを次も使わせるための ETag と `Cache-Control` だけ（RFC 9110 §15.4.5）。
+   */
+  if (matchesETag(ifNoneMatch, etag)) {
+    return new Response(null, { status: 304, headers: cacheHeaders(etag) })
+  }
+
+  // **実体が無いのは起こりうる正常系**（削除の途中失敗。prd/02 §3.2）。共有経路（`/s/*`）と
+  // 同じく 404 に畳む。畳まないと 500 になり、UI 側は `img` の失敗としてしか観測できないため
+  // **「実体が失われた」と「サーバーが壊れた」を同じ見た目で出す**ことになる（prd/03 §2）。
+  // ⚠ ストレージ障害はここで畳まない。500 のままにして、異常を異常として出す。
+  const blob = await getBlobStore()
+    .get(clip.blobKey)
+    .catch((error: unknown) => {
+      if (error instanceof BlobNotFoundError) return null
+      throw error
+    })
+  if (!blob) return new Response(null, { status: 404 })
+
+  const headers = cacheHeaders(etag)
+  // **保存時にサーバーが判定した MIME**を使う（クライアント申告ではない。prd/02 §4.2）。
+  headers.set('Content-Type', clip.mimeType)
+  headers.set('Content-Length', String(clip.byteSize))
+  // allowlist を通っていても、ブラウザの MIME 推測で別形式として解釈される余地を残さない。
+  headers.set('X-Content-Type-Options', 'nosniff')
 
   if (asAttachment) {
     const name = clip.fileName ?? `clip-${clip.id}.${IMAGE_EXTENSIONS[clip.mimeType]}`
@@ -357,7 +387,12 @@ async function serveBlob(id: string, asAttachment: boolean): Promise<Response> {
     headers.set('Content-Disposition', attachmentDisposition(name))
   }
 
-  return new Response(body, { headers })
+  return new Response(blob.body, { headers })
+}
+
+/** 200 と 304 の**両方**に載せるヘッダ。片方に欠けると次回の検証が成立しない。 */
+function cacheHeaders(etag: string): Headers {
+  return new Headers({ ETag: etag, 'Cache-Control': BLOB_CACHE_CONTROL })
 }
 
 /**

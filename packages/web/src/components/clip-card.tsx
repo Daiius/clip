@@ -55,8 +55,16 @@ export function ClipCard({
   const [expanded, setExpanded] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
-  /** 画像の取得が失敗した（実体が消えている）。削除の途中失敗で起きる（prd/02 §3.2）。 */
-  const [imageMissing, setImageMissing] = useState(false)
+  /**
+   * 画像を読み込めなかった。
+   *
+   * ⚠ **理由までは分からない。** `img` の `error` は状態コードを渡してくれないので、
+   * 実体の欠落（prd/02 §3.2）・セッション切れ・前段のレート制限・一時的な通信失敗が
+   * **すべて同じ signal になる**。文言でどれか1つと断定せず、`retryKey` で再試行させる（prd/03 §2）。
+   */
+  const [imageFailed, setImageFailed] = useState(false)
+  /** 変えると `img` が作り直され、同じ URL でも取得がやり直される。 */
+  const [retryKey, setRetryKey] = useState(0)
   /**
    * 画像の原寸。**DB には持たず、読み込んだ `img` から取る**（prd/03 §2）。
    *
@@ -65,7 +73,7 @@ export function ClipCard({
    */
   const [dimensions, setDimensions] = useState<Dimensions | null>(null)
 
-  const broken = clip.kind === 'broken' || imageMissing
+  const broken = clip.kind === 'broken' || imageFailed
 
   const download = () => {
     window.location.href = `/api/clips/${clip.id}/download`
@@ -173,11 +181,28 @@ export function ClipCard({
           // 削除は S3 → DB の順なので、途中で失敗すると**実体を失った行**が残る（prd/02 §3.2）。
           // 行の構造は正常なので一覧 API では検出できない。**取得の失敗をここで拾って明示する**
           // （黙って壊れた画像を出すと、気づける異常を選んだ意味が無くなる）。
-          <p className="text-error text-sm">
-            {clip.kind === 'broken'
-              ? 'この項目は壊れています（データが不整合です）。削除してください。'
-              : '画像の実体が見つかりません（削除の途中で失敗した可能性があります）。削除してください。'}
-          </p>
+          <div className="flex flex-col items-start gap-2">
+            <p className="text-error text-sm">
+              {clip.kind === 'broken'
+                ? 'この項目は壊れています（データが不整合です）。削除してください。'
+                : // ⚠ **「削除してください」と断定しない。** ここに来る理由は実体の欠落だけでなく、
+                  // 通信の失敗やセッション切れでもありうる（`imageFailed`）。**消せば直る**と読める
+                  // 案内を出すと、直るはずのものを消させてしまう。まず再試行させる（prd/03 §2）。
+                  '画像を読み込めませんでした。再試行しても直らない場合は、実体が失われています（削除してください）。'}
+            </p>
+            {clip.kind !== 'broken' && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={() => {
+                  setImageFailed(false)
+                  setRetryKey((key) => key + 1)
+                }}
+              >
+                再試行
+              </button>
+            )}
+          </div>
         ) : (
           <button
             type="button"
@@ -193,9 +218,19 @@ export function ClipCard({
             ) : (
               // サムネイルは作らず、原寸を CSS で縮小する（prd/03 §2）。
               <img
+                // 再試行のたびに作り直す（同じ URL でも取得がやり直される）。
+                key={retryKey}
                 src={`/api/clips/${clip.id}/blob`}
                 alt=""
-                onError={() => setImageMissing(true)}
+                /**
+                 * ⚠ **必ず遅延させる。** 1ページは 50 件で（prd/03 §2）、サムネイルを作らない以上
+                 * 1枚が原寸（最大 20MB・prd/02 §5）である。既定の eager だと**画面外の分まで
+                 * 一斉に落ちてくる**ため、一番上＝一番新しいものが出るまでが全体の転送に引きずられる。
+                 */
+                loading="lazy"
+                // デコードでメインスレッドを止めない（原寸のまま描くので画素数が大きい）。
+                decoding="async"
+                onError={() => setImageFailed(true)}
                 // 原寸はここでしか分からない（`ClipSize` へ渡す）。
                 onLoad={(event) =>
                   setDimensions({
