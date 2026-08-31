@@ -99,6 +99,23 @@ async function findClipsInOrder(ids: string[]): Promise<Clip[]> {
 }
 
 /**
+ * 投入されたテキストを取り出す。**web は Blob パートとして送ってくる。**
+ *
+ * ⚠ **multipart の文字列フィールドは使えない。** 仕様上、文字列フィールドの改行は直列化の際に
+ * すべて CRLF へ正規化されるため、LF のシェルスクリプトが**投入しただけで CRLF になる**
+ * （受け取った側でそのまま実行すると `\r` が混ざって動かない）。Blob パートは中身をバイト列として
+ * 運ぶので、**貼られたものがそのまま届く**（prd/03 §1.1）。
+ *
+ * 文字列も受け続ける。web とサーバーは別々に置き換わるので、**古いタブからの投入を落とさない**
+ * （その経路では従来どおり CRLF になるが、貼り直せば直る）。
+ */
+async function readTextField(value: unknown): Promise<string | null> {
+  if (value instanceof File) return await value.text()
+  if (typeof value === 'string') return value
+  return null
+}
+
+/**
  * API のルート定義。web はこの型を Hono RPC 経由で共有する（prd/01 §1）。
  *
  * 認証が要らないのは `/auth/*` と `/health` だけで、**それ以外は全て `sessionRequired` を通す**
@@ -147,7 +164,6 @@ export const routes = new Hono()
     async (c) => {
       const form = await c.req.parseBody()
       const file = form.file
-      const text = form.text
 
       if (file instanceof File) {
         const bytes = new Uint8Array(await file.arrayBuffer())
@@ -196,7 +212,8 @@ export const routes = new Hono()
         return c.json({ id } as const, 201)
       }
 
-      if (typeof text === 'string' && text.length > 0) {
+      const text = await readTextField(form.text)
+      if (text !== null && text.length > 0) {
         // `mediumtext` の上限を超えた入力をそのまま insert すると DB エラー（500）になる。
         // 利用者の入力に起因する失敗は明示的な 4xx で返す（prd/02 §5 / prd/03 §1.4）。
         if (Buffer.byteLength(text, 'utf8') > MAX_TEXT_BYTES) {
