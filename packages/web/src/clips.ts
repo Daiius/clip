@@ -54,9 +54,20 @@ async function postClip(form: FormData, kind: 'text' | 'image'): Promise<void> {
   throw new CaptureError('保存に失敗しました')
 }
 
+/**
+ * テキストの投入。
+ *
+ * ⚠ **文字列としてフォームに入れない**（`form.set('text', text)` と書かない）。
+ * multipart/form-data の直列化は**文字列フィールドの改行をすべて CRLF に正規化する**と
+ * 仕様で定められており、LF で書かれたシェルスクリプトは**貼った時点で CRLF になる**。
+ * 受け取った側でそのまま実行すると `\r` が混ざって動かない。
+ *
+ * Blob パートは中身をバイト列として運ぶので正規化を受けない。**貼られたものをそのまま保存する**
+ * （prd/03 §1.1）。元から CRLF のものは CRLF のまま渡る。
+ */
 export async function createTextClip(text: string): Promise<void> {
   const form = new FormData()
-  form.set('text', text)
+  form.set('text', new Blob([text], { type: 'text/plain' }), 'clip.txt')
   await postClip(form, 'text')
 }
 
