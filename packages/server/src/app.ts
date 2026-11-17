@@ -14,6 +14,7 @@ import {
 } from './auth.ts'
 import { BLOB_CACHE_CONTROL, blobETag, matchesETag } from './blob-cache.ts'
 import { BlobNotFoundError, type BlobStore, blobKeyFor, createS3BlobStore } from './blob-store.ts'
+import { buildVersionFromEnv } from './build-version.ts'
 import {
   type Clip,
   IMAGE_EXTENSIONS,
@@ -115,14 +116,23 @@ async function readTextField(value: unknown): Promise<string | null> {
   return null
 }
 
+/** ビルドの版。イメージの ENV は起動後に変わらないので、読み込み時に 1 回だけ読む。 */
+const buildVersion = buildVersionFromEnv(process.env)
+
 /**
  * API のルート定義。web はこの型を Hono RPC 経由で共有する（prd/01 §1）。
  *
- * 認証が要らないのは `/auth/*` と `/health` だけで、**それ以外は全て `sessionRequired` を通す**
+ * 認証が要らないのは `/auth/*`・`/health`・`/version` だけで、**それ以外は全て `sessionRequired` を通す**
  * （画像の取得も含む。prd/04 §3）。
  */
 export const routes = new Hono()
   .get('/health', (c) => c.json({ ok: true } as const))
+  /**
+   * この server がどのコミットから作られたか（prd/06 §3「ビルドの版」）。
+   * **認証を掛けず、DB にも触れない。** 返すのは SHA とビルド日時だけで、デプロイの確認は
+   * 資格情報を持たない側から行う。DB が落ちていても「何が動いているか」は読めるようにする。
+   */
+  .get('/version', (c) => c.json(buildVersion))
   .get('/auth/me', async (c) => {
     if (!(await hasValidSession(c))) return c.json({ error: 'unauthorized' } as const, 401)
     return c.json({ ok: true } as const)
