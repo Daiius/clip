@@ -52,7 +52,9 @@ fi
 
 # 未追跡のファイルも数える。`.dockerignore` に載っていなければビルドの文脈に入り、
 # **コミットに無いものがイメージに入る**ため。
-changes="$(git -C "$ROOT" status --porcelain)"
+# ⚠ **数え方を引数で言い切る。** 既定は利用者の git 設定で変わる（`status.showUntrackedFiles=no` だと
+#    未追跡を黙って見落とし、コミットに無いものを入れたまま `dirty: false` と名乗ってしまう）。
+changes="$(git -C "$ROOT" status --porcelain --untracked-files=all --ignore-submodules=none)"
 if [[ -n "$changes" ]]; then
   if [[ "${ALLOW_DIRTY:-}" != "1" ]]; then
     echo "作業ツリーがきれいではありません。コミットするか、きれいなチェックアウトで実行してください:" >&2
