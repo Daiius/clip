@@ -42,9 +42,12 @@ Phase 1・2 は開発環境（`pnpm dev` / 前段プロキシ越しの remote de
 
 | 段 | 内容 |
 |---|---|
-| build | `node:22-slim` + pnpm。`--frozen-lockfile` で依存を解決し、esbuild でバンドル |
-| runtime | distroless（Node のみ）。**バンドル済みの JS だけを置き、`node_modules` を持たない** |
+| build | `node:24-trixie-slim` + pnpm。`--frozen-lockfile` で依存を解決し、esbuild でバンドル |
+| runtime | distroless（`nodejs24-debian13`。Node のみ）。**バンドル済みの JS だけを置き、`node_modules` を持たない** |
 
+- **Node 24・Debian 13（trixie）に揃える**（開発用の `Dockerfile.dev` も同じ）。⚠ `node:24-slim` は
+  Debian 12 を指すので、build は系統を名指しする。server の依存はすべて JS で、ネイティブのモジュールも
+  OS のライブラリも使わないため、系統を上げてもバンドルは変わらない。
 - **エントリは 2 つ**: サーバー本体と、マイグレーション（[§4](#4-スキーマの反映)）。
   同じイメージに同梱する。
 - ⚠ **`packages/server` の `build` の意味が変わる**（型検査 → バンドル出力）。
