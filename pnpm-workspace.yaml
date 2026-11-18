@@ -9,11 +9,11 @@ catalog:
   tsx: ^4.22.3
 
   # --- 検証 ---
-  zod: ^4.4.2
+  zod: ^4.6.6
 
   # --- API (server) ---
-  hono: ^4.12.15
-  "@hono/node-server": ^2.0.3
+  hono: ^4.13.16
+  "@hono/node-server": ^2.1.6
   "@hono/zod-validator": ^0.8.0
   # エントリ ID（辞書順が生成時刻順。monotonic 生成器を使う。prd/02 §2）
   ulid: ^3.0.0
@@ -32,7 +32,7 @@ catalog:
   "@types/react": ^19.2.0
   "@types/react-dom": ^19.2.0
   "@tanstack/react-router": ^1.168.24
-  vite: ^8.0.10
+  vite: ^8.1.6
   "@vitejs/plugin-react": ^5.0.0
   # メモ化はコンパイラに任せる（手書きの useMemo/useCallback を置かない。prd/01 §1）。
   babel-plugin-react-compiler: ^1.0.0

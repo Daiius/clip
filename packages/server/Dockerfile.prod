@@ -42,5 +42,15 @@ COPY --from=build /workspace/packages/server/dist/migrate.mjs ./migrate.mjs
 # ⚠ ここを忘れると、マイグレーションを流すまで気づけない。
 COPY --from=build /workspace/packages/server/drizzle ./drizzle
 
+# ビルドの版（prd/06 §3）。`GET /api/version` が返す。`.dockerignore` が `.git` を除くので
+# イメージの中では git から取れない——**ビルド引数で渡す**（scripts/build-server-image.sh）。
+# 未指定なら unknown になるだけで、ビルドは止めない。
+# **最終ステージの末尾に置く**（値が毎回変わるので、手前の層のキャッシュを壊さないように）。
+# ⚠ ここを消してもビルドは通り、版が黙って unknown になる。src/build-version.test.ts が照合する。
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+ARG GIT_DIRTY=false
+ENV GIT_COMMIT=$GIT_COMMIT BUILD_TIME=$BUILD_TIME GIT_DIRTY=$GIT_DIRTY
+
 EXPOSE 4000
 CMD ["/app/server.mjs"]
