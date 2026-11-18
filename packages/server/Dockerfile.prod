@@ -11,8 +11,14 @@
 # ⚠ **distroless には shell が無い。** `exec <service> sh` は使えないが、ENTRYPOINT が
 #    Node なので **JS のパスを渡す形での実行は可能**である。
 
+# **ベースは build・runtime とも Debian 13（trixie）、Node 24 に揃える。**
+# ⚠ `node:24-slim` は Debian 12（bookworm）を指すので、**`-trixie-slim` と系統を名指しする。**
+#    runtime の distroless はタグの側に `-debian13` が入っている。
+#    どちらも Node だけで動く（server の依存にネイティブのモジュールが無い）ので、
+#    OS の系統を上げてもバンドルの中身は変わらない。
+
 # ---- build: 依存解決 + esbuild バンドル ----------------------------------------
-FROM node:22-slim AS build
+FROM node:24-trixie-slim AS build
 WORKDIR /workspace
 RUN corepack enable
 
@@ -31,7 +37,7 @@ COPY packages/server packages/server
 RUN pnpm --filter server build
 
 # ---- runtime: バンドルとマイグレーションだけ -----------------------------------
-FROM gcr.io/distroless/nodejs22-debian12:latest
+FROM gcr.io/distroless/nodejs24-debian13:latest
 WORKDIR /app
 ENV NODE_ENV=production
 

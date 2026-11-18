@@ -1,5 +1,6 @@
 # 開発用の共通イメージ（server / web で共用）。本番イメージは別途用意する。
-FROM node:22-slim
+# Node のメジャーと Debian の系統は本番（packages/server/Dockerfile.prod）に揃える。
+FROM node:24-trixie-slim
 
 # pnpm（corepack 経由。バージョンは package.json の packageManager に従う）
 RUN corepack enable
